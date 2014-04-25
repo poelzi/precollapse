@@ -1,0 +1,8 @@
+[Core]
+Name = git
+Module = git
+
+[Documentation]
+Description = git support
+Author = precollapse
+Version = 0.1

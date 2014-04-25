@@ -1,0 +1,9 @@
+db-sync
+collection-add test1
+collection-add test2
+ls
+ls /test1
+info /test1
+entry-add /test1/python-enum https://docs.python.org/3/library/enum.html
+cd test1
+entry-add /test1/python-content https://docs.python.org/3/contents.html

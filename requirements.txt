@@ -1,0 +1,6 @@
+ipython
+yapsy
+cliff
+SQLAlchemy
+alembic
+enum34
