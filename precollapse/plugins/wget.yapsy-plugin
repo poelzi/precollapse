@@ -1,0 +1,8 @@
+[Core]
+Name = wget
+Module = wget
+
+[Documentation]
+Description = downloads files via wget
+Author = precollapse
+Version = 0.1

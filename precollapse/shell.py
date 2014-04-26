@@ -8,6 +8,8 @@ from .__init__ import VERSION
 from . import utils
 import os
 import readline
+import configparser
+from . import db
 
 CONFIG_FILE = "~/.config/precollapse/precollapse.conf"
 CONFIG_PATH = "~/.config/precollapse"
@@ -22,6 +24,7 @@ class PrecollapseApp(App):
         print("-----")
         self.pwd = "/"
         self.manager = manager
+        self.config = None
 
         super(PrecollapseApp, self).__init__(
             description=_('collection download and sharing tool'),
@@ -38,6 +41,9 @@ class PrecollapseApp(App):
         return rv
 
     def set_pwd(self, path):
+        """
+        sets the working directory of the interactive prompt
+        """
         self.pwd = path
         if self.interpreter:
             self.interpreter.prompt = utils.get_prompt(path)
@@ -58,6 +64,11 @@ class PrecollapseApp(App):
             metavar='state',
             help='use state directory',
             )
+        parser.add_argument(
+            '--full-debug',
+            default=False,
+            action='store_true',
+            help="set debug on subsystems")
         return parser
 
 
@@ -90,10 +101,24 @@ class PrecollapseApp(App):
         except:
             pass
 
+    def load_config(self):
+        """load config files"""
+        self.config = config = configparser.ConfigParser()
+
+        default = os.path.join(os.path.dirname(__file__), "default.conf")
+        path = os.path.expanduser(self.options.config)
+
+        read = config.read([default, path])
+        self.log.debug("read config files: %s" %read)
+
     def initialize_app(self, argv):
         self.log.debug('initialize precollapse')
         self.create_config_dir()
         self.load_history()
+        self.load_config()
+        db.configure_engine(self.config.get("main", "database"))
+        self.manager.download_manager.start()
+        #embed()
 
 
     def prepare_to_run_command(self, cmd):

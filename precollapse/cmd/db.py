@@ -1,7 +1,6 @@
 import logging
 
-from cliff.command import Command
-from ..db import Base, Engine
+from ..base import Command
 
 
 class SyncDB(Command):
@@ -12,10 +11,8 @@ class SyncDB(Command):
 
     def take_action(self, parsed_args):
         self.log.info('sync db')
-        from ..db import model
+        from ..db import Base, model, create_session, Engine
 
+        session = create_session()
         Base.metadata.create_all(Engine)
 
-
-
-__all__ = [SyncDB]

@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, BLOB, Enum, ForeignKey,\
                        DateTime, Interval, Boolean, asc, desc, UniqueConstraint
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, backref, object_session
@@ -9,11 +10,12 @@ import json
 import os
 import datetime
 import enum
+import math
 
 from sqlalchemy import create_engine
 
-from . import Base, Session
-from ..utils import AlchemyEncoder, pathsplit, pathjoin
+from . import Base, create_session
+from ..utils import AlchemyEncoder, pathsplit, pathjoin, fib
 from .. import exceptions as exc
 
 
@@ -31,12 +33,34 @@ META_BLOB = 'BLOB'
 META_NONE = 'NONE'
 META_TYPES = [META_STRING, META_JSON, META_INTEGER, META_BLOB, META_NONE]
 
+
+
+
+class AEnum(TypeDecorator):
+    """Safely coerce Python bytestrings to Unicode
+    before passing off to the database."""
+
+    impl = Enum
+
+    def process_bind_param(self, value, dialect):
+        if isinstance(value, enum.Enum):
+            value = value.value
+        return value
+
+
+
 class EntryState(enum.Enum):
     download = "DOWNLOAD"
-
+    done = "DONE"
 
     def __str__(self):
         return self.value
+
+    def __eq__(self, other):
+        if isinstance(other, enum.Enum):
+            return self.value == other.value
+        return self.value == other
+
 
 def suuid():
     return str(uuid.uuid4())
@@ -194,27 +218,35 @@ class Collection(Base, ModelMixin):
 class Entry(Base, ModelMixin):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, index=True, doc="name of directroy")
-    type = Column(Enum(*ENTRY_TYPES), index=True)
+    type = Column(AEnum(*ENTRY_TYPES), index=True)
     plugin = Column(String(PLUGIN_NAME_LENGTH), doc="plugin handling the entry")
     uuid = Column(String(36), index=True, unique=True, default=suuid)
     url = Column(Text)
-    state = Column(Enum(*enum2alch(EntryState)))
+    arguments = Column(Text)
+    state = Column(AEnum(*enum2alch(EntryState)))
     created = Column(DateTime, default=datetime.datetime.now)
     updated = Column(DateTime, default=None, index=True)
     enabled = Column(Boolean, nullable=True, default=None)
     last_success = Column(DateTime, nullable=True, default=None)
     last_failure = Column(DateTime, nullable=True, default=None, index=True)
+    last_error =  Column(Text, nullable=True, default=None)
     next_check = Column(DateTime, nullable=True, default=None, index=True,
                         doc="used for querying jobs")
+    job_started = Column(DateTime, nullable=True, default=None, index=True,
+                         doc="last time the job started")
     failure_count = Column(Integer, nullable=False, default=0,
                            doc="failures since last success")
     size_is = Column(Integer, nullable=False, default=0,
                            doc="size last time checked")
     size_should = Column(Integer, nullable=False, default=0,
                          doc="size if known")
+    priority = Column(Integer, nullable=False, default=0,
+                      doc="priority for job scheduler. higher means more priority")
 
-    collection_id = Column(Integer, ForeignKey('collection.id'), index=True)
+    collection_id = Column(Integer, ForeignKey('collection.id'), nullable=False, index=True)
     parent_id = Column(Integer, ForeignKey('entry.id'),  index=True)
+    check_interval = Column(Interval(), default=None)
+
     children = relationship("Entry")
     meta = relationship("Meta", backref="entry")
 
@@ -225,7 +257,7 @@ class Entry(Base, ModelMixin):
 
     EXPORT = (
         ("plugin", "updated", "state", "size", "name"),
-        ("id", "type", "uuid", "url", "created", "enabled", "size_should"),
+        ("id", "type", "uuid", "url", "arguments", "created", "enabled", "size_should"),
         ("updated", "last_success", "last_failure",
          "next_check")
         )
@@ -235,22 +267,71 @@ class Entry(Base, ModelMixin):
         # maybe do update here ?
         return self.size_is
 
+    def set_error(self, msg):
+        session = create_session()
+        self.last_error = msg
+        now = datetime.datetime.now()
+        self.last_failure = now
+        self.failure_count += 1
+        self.next_check = (now +
+                           datetime.timedelta(
+                               minutes=fib(min(self.failure_count, 10))))
+        session.add(self)
+        session.commit()
+
+    def set_success(self):
+        session = create_session()
+        self.last_error = None
+        now = datetime.datetime.now()
+        self.last_success = now
+        self.failure_count = 0
+        self.next_check = (now +
+                           self.get_first_set("check_interval"))
+        self.state = EntryState.done.value
+        session.add(self)
+        session.commit()
+
+
+
     def is_collection(self):
         return self.type != 'SINGLE'
 
     def is_single(self):
         return self.type == 'SINGLE'
 
+
+    def get_first_set(self, key):
+        session = create_session()
+
+        cur = self
+        while True:
+            rv = getattr(cur, key, None)
+            if rv:
+                print("rv", rv)
+                return rv
+
+            if not cur.parent_id:
+                # check collection
+                cur = session.query(Collection).filter(Collection.id==cur.collection_id).one()
+                print("cur", cur)
+                return getattr(cur, key, None)
+
+            cur = session.query(Entry).filter(Entry.id==cur.parent_id).one()
+            print(cur)
+
     @property
     def full_path(self):
-        session = object_session(self)
+        #session = object_session(self)
+        session = create_session()
         parts = [self.name]
         cur = self
         #embed()
         while cur.parent_id != None:
-            print(cur)
-            cur = cur.parent_id
-            parts.insert(0, cur.name)
+            cur = session.query(Entry).filter(Entry.id==cur.parent_id).one()
+            if cur.name != "/":
+                parts.insert(0, cur.name)
+            else:
+                parts.insert(0, "")
         return pathjoin(parts)
 
 
@@ -294,7 +375,7 @@ class Meta(Base):
     id = Column(Integer, primary_key=True)
     entry_id = Column(Integer, ForeignKey('entry.id'))
     plugin = Column(String(PLUGIN_NAME_LENGTH), index=True, doc="plugin handling matadata")
-    type = Column(Enum(*META_TYPES), index=True)
+    type = Column(AEnum(*META_TYPES), index=True)
     name = Column(String(255), index=True, doc="name of value key")
     _value = Column(BLOB())
 

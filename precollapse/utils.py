@@ -64,3 +64,9 @@ def abspath(*args):
 
 def get_prompt(path):
     return '(precollapse) %s: ' %path
+
+def fib(n):
+    a, b = 0, 1
+    for i in range(n):
+        a, b = b, a + b
+        return a

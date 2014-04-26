@@ -28,5 +28,9 @@ setup(
     setup_requires=[
         "SQLAlchemy",
         "ipython", # for debugging
-    ]
+    ],
+    test_requires=[
+        "nose2",
+    ],
+    test_suite='nose2.collector.collector'
 )

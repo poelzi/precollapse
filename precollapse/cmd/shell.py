@@ -36,8 +36,8 @@ class Ls(Lister):
 
     def entry(self, path, details=False):
         from ..db.model import Collection, Entry
-        from ..db import Session
-        session = Session()
+        from ..db import create_session
+        session = create_session()
         res = Collection.lookup(session, path)
         #embed()
 
@@ -51,8 +51,8 @@ class Ls(Lister):
 
     def root(self, query=None, details=False):
         from ..db.model import Collection
-        from ..db import Session
-        session = Session()
+        from ..db import create_session
+        session = create_session()
         if query:
             q = session.query(Collection).filter(Collection.name.startswith(query))
         else:
@@ -77,9 +77,9 @@ class Cd(Command):
     )
 
     def take_action(self, parsed_args):
-        from ..db import Session
         from ..db.model import Collection
-        session = Session()
+        from ..db import create_session
+        session = create_session()
         if parsed_args.path[0] == "/":
             self.app.set_pwd("/")
             return
@@ -105,8 +105,8 @@ class Info(ShowOne):
 
     def take_action(self, parsed_args):
         from ..db.model import Collection
-        from ..db import Session
-        session = Session()
+        from ..db import create_session
+        session = create_session()
         res = Collection.lookup(session, parsed_args.path[0])
         if not res:
             return None
