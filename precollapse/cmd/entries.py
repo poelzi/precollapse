@@ -53,6 +53,7 @@ class Entry_Add(ShowOne, EntryMod):
     PARAMETERS = [
         ('name', {"nargs":1}),
         ('url', {"nargs":'?'}),
+        ('arguments', {"nargs":'*', "help":"additional download parameters (backend specific)"}),
         ('--disable', {"action": "store_true"}),
         ('--uuid', {"action": "store"}),
         ('--plugin', {"action": "store"}),
@@ -67,6 +68,7 @@ class Entry_Add(ShowOne, EntryMod):
 
         entry = self.add_entry(parsed_args.name[0],
                        url=parsed_args.url,
+                       arguments=parsed_args.arguments,
                        disable=parsed_args.disable,
                        uuid=parsed_args.uuid,
                        plugin=parsed_args.plugin)

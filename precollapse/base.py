@@ -5,6 +5,7 @@ from cliff.lister import Lister as cLister
 import enum
 import asyncio
 import os
+import io
 import os.path
 import logging
 from IPython import embed
@@ -55,34 +56,69 @@ class Backend(object):
     def start_backend(self, daemon):
         self.daemon = daemon
 
+
 class CommandBackend(Backend):
     """
     Backend that implements usage command arguments to spawn
     """
+
+    encoding = "utf-8"
+
+    def update_msg(self, entry, buffer_, stderr=False):
+        if entry not in self.buffers:
+            self.buffers[entry] = [io.StringIO(), io.StringIO()]
+        i = stderr and 1 or 0
+        try:
+            self.buffers[entry][i].write(buffer_.decode(self.encoding))
+        except UnicodeError as e:
+            pass
+        try:
+            self.process_update(entry, self.buffers[entry][i], stderr)
+        except Exception as e:
+            self.log.exception(e)
+
+
+    def process_update(self, entry, buffer_, strderr=False):
+        raise NotImplemented
+
+    def task_done(self, entry, stderr=False, returncode=None):
+        print("task done", entry)
+
+
     @asyncio.coroutine
     def handle_entry(self, entry):
         args = self.get_command_args(entry)
-
 
         self.log.debug("run command: %s" %args)
         job = yield from asyncio.create_subprocess_exec(*args, stdin=None,
                                              stdout=asyncio.subprocess.PIPE,
                                              stderr=asyncio.subprocess.PIPE)
         #task = asyncio.Task(job)
+        @asyncio.coroutine
+        def read_stdout(job):
+            while True:
+                data = yield from job.stdout.read()
+                if not data:
+                    self.task_done(entry, returncode=job.returncode)
+                    return
+                self.update_msg(entry, data)
 
+        @asyncio.coroutine
+        def read_stderr(job):
+            try:
+                while True:
+                    data = yield from job.stderr.read(10)
+                    if not data:
+                        self.task_done(entry, stderr=True, returncode=job.returncode)
+                        return
+                    self.update_msg(entry, data, stderr=True)
+            except Exception as e:
+                self.log.exception(e)
+
+        asyncio.Task(read_stdout(job))
+        asyncio.Task(read_stderr(job))
 
         self.jobs.append(job)
-        stdout, stderr = yield from job.communicate()
-        embed()
-
-        #self.daemon.loop.call_soon(task)
-        exitcode = yield from job.wait()
-        if exitcode == 0:
-            entry.set_success()
-        else:
-            entry.set_error(stderr)
-
-        #embed()
 
     def get_command_args(self, entry):
         raise NotImplemented
@@ -90,6 +126,7 @@ class CommandBackend(Backend):
     def start_backend(self, daemon):
         self.daemon = daemon
         self.jobs = []
+        self.buffers = {}
 
 class DownloadManager(object):
     """

@@ -4,3 +4,4 @@ cliff
 SQLAlchemy
 alembic
 enum34
+asyncio

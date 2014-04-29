@@ -23,8 +23,9 @@ PLUGIN_NAME_LENGTH=30
 
 TYPE_DIRECTORY = 'DIRECTORY'
 TYPE_COLLECTION = 'COLLECTION'
+TYPE_COLLECTION_MEMBER = 'COLLECTION_MEMBER'
 TYPE_SINGLE = 'SINGLE'
-ENTRY_TYPES = [TYPE_DIRECTORY, TYPE_COLLECTION, TYPE_SINGLE]
+ENTRY_TYPES = [TYPE_DIRECTORY, TYPE_COLLECTION, TYPE_COLLECTION_MEMBER, TYPE_SINGLE]
 
 META_STRING = 'STRING'
 META_JSON = 'JSON'
@@ -229,7 +230,8 @@ class Entry(Base, ModelMixin):
     enabled = Column(Boolean, nullable=True, default=None)
     last_success = Column(DateTime, nullable=True, default=None)
     last_failure = Column(DateTime, nullable=True, default=None, index=True)
-    last_error =  Column(Text, nullable=True, default=None)
+    error_msg = Column(Text, nullable=True, default=None)
+    success_msg = Column(Text, nullable=True, default=None)
     next_check = Column(DateTime, nullable=True, default=None, index=True,
                         doc="used for querying jobs")
     job_started = Column(DateTime, nullable=True, default=None, index=True,
@@ -269,7 +271,7 @@ class Entry(Base, ModelMixin):
 
     def set_error(self, msg):
         session = create_session()
-        self.last_error = msg
+        self.error_msg = msg
         now = datetime.datetime.now()
         self.last_failure = now
         self.failure_count += 1
@@ -279,11 +281,12 @@ class Entry(Base, ModelMixin):
         session.add(self)
         session.commit()
 
-    def set_success(self):
+    def set_success(self, msg=None):
         session = create_session()
         self.last_error = None
         now = datetime.datetime.now()
         self.last_success = now
+        self.success_msg = msg
         self.failure_count = 0
         self.next_check = (now +
                            self.get_first_set("check_interval"))

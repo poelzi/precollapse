@@ -64,10 +64,10 @@ class Daemon(object):
                 self.blacklist.add(entry.id)
                 # FIXME, blacklist entry until restart
                 return
-            
+
             yield from plugin.handle_entry(entry)
 
-            return job
+
             #embed()
             #yield (priority, entry)
 
@@ -75,6 +75,7 @@ class Daemon(object):
             #embed()
         except Exception as e:
             self.log.exception(e)
+        #raise asyncio.tasks.Return(job)
 
     @asyncio.coroutine
     def got_entries(self, entries):
@@ -143,10 +144,10 @@ class Daemon(object):
 
                 #def cb():
                 #    pass
-                h = asyncio.Handle(get_entries, ())
+                #h = asyncio.Handle(self.loop, get_entries, ())
                 #h.cancel()
 
-                process = self.loop.run_in_executor(None, h)
+                process = self.loop.run_in_executor(None, get_entries)
 
                 #process = self.loop.run_in_executor(None,
                 #               get_entries)
@@ -177,5 +178,8 @@ class Daemon(object):
 
         asyncio.Task(self.check_jobs())
         asyncio.Task(self.do_job())
-        el.run_forever()
+        try:
+            el.run_forever()
+        except KeyboardInterrupt:
+            sys.exit(0)
 
