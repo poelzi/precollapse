@@ -56,6 +56,11 @@ class Backend(object):
     def start_backend(self, daemon):
         self.daemon = daemon
 
+    def success(self, entry, msg):
+        entry.set_success(msg)
+
+    def failure(self, entry, msg):
+        entry.set_error(msg)
 
 class CommandBackend(Backend):
     """
@@ -63,26 +68,43 @@ class CommandBackend(Backend):
     """
 
     encoding = "utf-8"
+    valid_rc = [0]
 
     def update_msg(self, entry, buffer_, stderr=False):
         if entry not in self.buffers:
             self.buffers[entry] = [io.StringIO(), io.StringIO()]
         i = stderr and 1 or 0
-        try:
-            self.buffers[entry][i].write(buffer_.decode(self.encoding))
-        except UnicodeError as e:
-            pass
+        if isinstance(buffer_, bytes):
+            try:
+                self.buffers[entry][i].write(buffer_.decode(self.encoding, "replace"))
+            except UnicodeError as e:
+                pass
+        else:
+            self.buffers[entry][i].write(buffer_)
         try:
             self.process_update(entry, self.buffers[entry][i], stderr)
         except Exception as e:
             self.log.exception(e)
 
-
     def process_update(self, entry, buffer_, strderr=False):
-        raise NotImplemented
+        pass
 
     def task_done(self, entry, stderr=False, returncode=None):
-        print("task done", entry)
+        # update entry
+        if stderr:
+            self.log.info("task done %s rc:%s", entry, returncode)
+            if returncode in self.valid_rc:
+                super(CommandBackend, self).success(entry, self.buffers[entry][1].getvalue())
+            else:
+                super(CommandBackend, self).failure(entry, self.buffers[entry][1].getvalue())
+            self.buffers[entry][1].truncate()
+            self.buffers[entry][1].close()
+        else:
+            self.buffers[entry][0].truncate()
+            self.buffers[entry][0].close()
+        if self.buffers[entry][0].closed and self.buffers[entry][1].closed:
+            del self.buffers[entry]
+
 
 
     @asyncio.coroutine

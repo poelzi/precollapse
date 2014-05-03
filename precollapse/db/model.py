@@ -118,6 +118,8 @@ class ModelMixin(object):
 class Collection(Base, ModelMixin):
     id = Column(Integer, primary_key=True)
     name = Column(String(255))
+    description = Column(String(80))
+    long_description = Column(Text)
     owner = Column(String(200), default=os.getlogin())
     owner_gpgid = Column(String(30))
     upstream_url = Column(Text(), doc="upstream url")
@@ -136,8 +138,9 @@ class Collection(Base, ModelMixin):
     EXPORT = (
         ("size", "owner", "changed", "name"),
         ("id", "upstream_url", "uuid", "created", "updated",
-         "enabled", "check_interval", "owner_gpgid")
-        )
+         "enabled", "check_interval", "owner_gpgid"),
+        ("description", "long_description")
+    )
 
 
     @staticmethod
@@ -261,7 +264,7 @@ class Entry(Base, ModelMixin):
         ("plugin", "updated", "state", "size", "name"),
         ("id", "type", "uuid", "url", "arguments", "created", "enabled", "size_should"),
         ("updated", "last_success", "last_failure",
-         "next_check")
+         "next_check", "error_msg", "success_msg")
         )
 
     @property

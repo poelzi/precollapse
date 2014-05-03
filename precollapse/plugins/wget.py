@@ -18,9 +18,9 @@ class WgetBackend(CommandBackend):
     def process_update(self, entry, buffer_, stderr=False):
         print(buffer_)
         #Length: 86069 (84K) [text/html]
-        print(buffer_.getvalue())
         #if len(buffer_.getvalue()) > 300:
         #    embed()
+
         match = RE_LENGTH.search(buffer_.getvalue())
         print("match", match)
         if match:
@@ -42,7 +42,7 @@ class WgetBackend(CommandBackend):
 
     def get_command_args(self, entry):
         out_path = self.manager.download_manager.prepare_entry(entry, None)
-        args = ["wget", "--progress=dot", "-P", out_path, entry.url]
+        args = ["wget", "--progress=dot", "-P", out_path, "-N", entry.url]
         return args
 
 class WgetPlugin(base.Plugin):

@@ -9,7 +9,9 @@ import datetime
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 import concurrent
-asyncio.tasks._DEBUG = True
+from . import webserver
+#asyncio.tasks._DEBUG = True
+
 
 class Job(object):
     def __init__(self, entry):
@@ -24,8 +26,6 @@ class Job(object):
         return "<Job entry='%s'>" %(self.entry and self.entry.id or self.entry.name)
 
 
-# FIXME: this async code definitly needs cleanup and love.
-# asyncio python seems strange sometimes
 
 class Daemon(object):
     log = logging.getLogger("daemon")
@@ -135,10 +135,17 @@ class Daemon(object):
                                                                     model.Entry.next_check<now)) \
                                                            .filter(model.Entry.type.isnot(model.TYPE_DIRECTORY)) \
                                                            .order_by(desc(model.Entry.priority))
-                        rv = list(query)
-                        print(rv)
+                        #rv = list(query)
+                        for entry in query:
+                            # we need to detach the instance for other threads
+                            # to process it
+                            qsession.expunge(entry)
+                            yield entry
+
+                        #print(rv)
                         #return [1,2,3]
-                        return rv
+                        #return rv
+                        return
                     except Exception as e:
                         self.log.exception(e)
 
@@ -178,6 +185,7 @@ class Daemon(object):
 
         asyncio.Task(self.check_jobs())
         asyncio.Task(self.do_job())
+        webserver.webapp.run(greeting=True, run_forever=False)
         try:
             el.run_forever()
         except KeyboardInterrupt:

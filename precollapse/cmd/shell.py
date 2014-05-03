@@ -95,12 +95,13 @@ class Cd(Command):
 
 class Info(ShowOne):
     "shows informations about a Entry"
-    name = "info"
+    name = "show"
 
     log = logging.getLogger(__name__)
 
     PARAMETERS = [
-        ('path', {"nargs":'+'})
+        ('path', {"nargs":'+'}),
+        ('--all',  {"action":'store_true'})
     ]
 
     def take_action(self, parsed_args):
@@ -110,7 +111,7 @@ class Info(ShowOne):
         res = Collection.lookup(session, parsed_args.path[0])
         if not res:
             return None
-        return res.dump(all_=True)
+        return res.dump(details=True, all_=parsed_args.all)
 
 
 

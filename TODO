@@ -1,0 +1,21 @@
+Core
+----
+
+- schema updates (alembic ?)
+- export/import of collections
+- gpg support. create autocreate internal key and build an own keyring
+- dht for collection sharing and searching
+- lib for extracting recursive links and create subentries to easier implement recursive downloads
+
+
+
+Plugins
+-------
+
+- curl based plugin (curl bindings). Implement own recursive logic that creates subentries in the tree
+- git-annex based download_manager
+- mediawiki plugin
+- rtorrent plugin
+- metadata extractors
+
+

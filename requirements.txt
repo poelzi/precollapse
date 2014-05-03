@@ -5,3 +5,4 @@ SQLAlchemy
 alembic
 enum34
 asyncio
+websockets
