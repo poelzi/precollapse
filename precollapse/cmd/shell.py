@@ -114,5 +114,28 @@ class Info(ShowOne):
         return res.dump(details=True, all_=parsed_args.all)
 
 
+class Restart(Command):
+    "restarts a the download now"
+    name = "restart"
 
-__all__ = [Ls, Cd, Info]
+    log = logging.getLogger(__name__)
+
+    PARAMETERS = [
+        ('path', {"nargs":'+'}),
+        ]
+
+    def take_action(self, parsed_args):
+        from ..db.model import Collection
+        from ..db import create_session
+        session = create_session()
+        for path in parsed_args.path:
+            res = Collection.lookup(session, path)
+            if not res:
+                self.log.error("can't find: %s", path)
+            else:
+                self.log.info("restart %s", path)
+                res.restart()
+
+
+
+__all__ = [Ls, Cd, Info, Restart]

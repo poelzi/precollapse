@@ -294,6 +294,13 @@ class Entry(Base, ModelMixin):
         session.add(self)
         session.commit()
 
+    def restart(self):
+        session = create_session()
+        self.last_error = None
+        now = datetime.datetime.now()
+        self.next_check = (now)
+        session.add(self)
+        session.commit()
 
 
     def is_collection(self):
