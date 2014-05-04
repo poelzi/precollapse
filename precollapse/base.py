@@ -37,6 +37,18 @@ class Backend(object):
     def weight_entry(self, entry):
         return UrlWeight.unable
 
+    @asyncio.coroutine
+    def do_entry(self, entry):
+        from .db import create_session
+        session = create_session()
+        session.add(entry)
+        try:
+            yield from self.handle_entry(entry)
+            session.commit()
+        except Exception as e:
+            self.log.exception(e)
+            session.rollback()
+
     def handle_entry(self, entry):
         """
         Passed a Entry instance from the sheduler daemon that should
@@ -155,17 +167,20 @@ class DownloadManager(object):
     Simple download manager for flat files
     """
     quality = 0
+    name = "plain"
 
-    def __init__(self, manager):
+    def __init__(self, manager, download_path=None):
         self.manager = manager
-        self.download_path = None
+        self.download_path = download_path
 
     def start(self):
-        self.download_path = os.path.expanduser(self.manager.app.config.get("main", "download_dir"))
+        if not self.download_path:
+            self.download_path = os.path.expanduser(self.manager.app.config.get("main", "download_dir"))
+
         if self.download_path[0] != os.path.sep:
             self.download_path = os.path.join(os.getcwd(), self.download_path)
-        os.makedirs(self.download_path,
-                    exist_ok=True)
+
+        os.makedirs(self.download_path, exist_ok=True)
 
 
     def prepare_entry(self, entry, relpath=None):

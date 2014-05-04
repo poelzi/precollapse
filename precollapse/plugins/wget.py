@@ -41,7 +41,8 @@ class WgetBackend(CommandBackend):
             return UrlWeight.unable
 
     def get_command_args(self, entry):
-        out_path = self.manager.download_manager.prepare_entry(entry, None)
+        #embed()
+        out_path = self.manager.get_download_manager(entry.collection).prepare_entry(entry, None)
         args = ["wget", "--progress=dot", "-P", out_path, "-N", entry.url]
         return args
 

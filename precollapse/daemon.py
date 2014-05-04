@@ -65,7 +65,7 @@ class Daemon(object):
                 # FIXME, blacklist entry until restart
                 return
 
-            yield from plugin.handle_entry(entry)
+            yield from plugin.do_entry(entry)
 
 
             #embed()

@@ -117,7 +117,7 @@ class PrecollapseApp(App):
         self.load_history()
         self.load_config()
         db.configure_engine(self.config.get("main", "database"))
-        self.manager.download_manager.start()
+        #self.manager.download_manager.start()
         #embed()
 
 

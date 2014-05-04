@@ -80,8 +80,6 @@ def filter_dump(rv, filter_):
     if filter_ is None:
         return
     dd = list(filter(lambda k: k not in filter_, rv.keys()))
-    print("--------------------------")
-    print(dd)
     for d in dd:
         del rv[d]
     return rv
@@ -118,7 +116,7 @@ class ModelMixin(object):
 class Collection(Base, ModelMixin):
     id = Column(Integer, primary_key=True)
     name = Column(String(255))
-    description = Column(String(80))
+    description = Column(String(80), index=True)
     long_description = Column(Text)
     owner = Column(String(200), default=os.getlogin())
     owner_gpgid = Column(String(30))
@@ -128,6 +126,8 @@ class Collection(Base, ModelMixin):
     updated = Column(DateTime, default=None)
     enabled = Column(Boolean, default=True)
     check_interval = Column(Interval(), default=datetime.timedelta(days=1))
+    download_manager = Column(String(30))
+    download_path = Column(String(255))
 
     #uname = Column(Collection.name.concat("-").concat(Collection.uuid).label("uname"))
 
@@ -138,7 +138,7 @@ class Collection(Base, ModelMixin):
     EXPORT = (
         ("size", "owner", "changed", "name"),
         ("id", "upstream_url", "uuid", "created", "updated",
-         "enabled", "check_interval", "owner_gpgid"),
+         "enabled", "check_interval", "owner_gpgid", "download_manager"),
         ("description", "long_description")
     )
 
@@ -151,7 +151,7 @@ class Collection(Base, ModelMixin):
         session.add(root)
         return nc
 
-    def mkdir(name):
+    def mkdir(self, name):
         session = object_session(self)
         if self.type != TYPE_DIRECTORY:
             raise exc.EntryTypeError("can't create directory under non directory")
@@ -165,15 +165,12 @@ class Collection(Base, ModelMixin):
     @staticmethod
     def lookup(session, path):
         sp = pathsplit(path)
-        print(sp)
         if len(sp) < 2:
             raise exc.ArgumentError("path needs to be aboslute")
         # find collection
         colname = sp[1]
         col = Collection.lookup_collection(session, colname)
         entries = col.lookup_path(session, sp[2:])
-        print("---%--"*4)
-        print(entries)
         return entries
 
     @staticmethod
@@ -313,17 +310,14 @@ class Entry(Base, ModelMixin):
         while True:
             rv = getattr(cur, key, None)
             if rv:
-                print("rv", rv)
                 return rv
 
             if not cur.parent_id:
                 # check collection
                 cur = session.query(Collection).filter(Collection.id==cur.collection_id).one()
-                print("cur", cur)
                 return getattr(cur, key, None)
 
             cur = session.query(Entry).filter(Entry.id==cur.parent_id).one()
-            print(cur)
 
     @property
     def full_path(self):
