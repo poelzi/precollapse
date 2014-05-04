@@ -142,6 +142,9 @@ class Collection(Base, ModelMixin):
         ("description", "long_description")
     )
 
+    @property
+    def basename(self):
+        return self.name.replace("/", "_").replace("\\", "_")
 
     @staticmethod
     def create(session, *args, **kwargs):

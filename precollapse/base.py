@@ -174,12 +174,6 @@ class DownloadManager(object):
         self.download_path = download_path
 
     def start(self):
-        if not self.download_path:
-            self.download_path = os.path.expanduser(self.manager.app.config.get("main", "download_dir"))
-
-        if self.download_path[0] != os.path.sep:
-            self.download_path = os.path.join(os.getcwd(), self.download_path)
-
         os.makedirs(self.download_path, exist_ok=True)
 
 
@@ -190,17 +184,7 @@ class DownloadManager(object):
 
         returns absolute path
         """
-        col = entry.collection_id
-        #embed()
-        if isinstance(col, int):
-            from .db import create_session, model
-            session = create_session()
-            col = session.query(model.Collection).filter(model.Collection.id==col).one()
-
-        if not col:
-            raise ValueError("entries collection can't be None")
-
-        rv = os.path.join(self.download_path, col.name, entry.full_path[1:])
+        rv = os.path.join(self.download_path, entry.full_path[1:])
         os.makedirs(rv,
                     exist_ok=True)
         return rv

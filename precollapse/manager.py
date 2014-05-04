@@ -83,7 +83,14 @@ class CollapseManager(PluginManager):
                     self._default_dl = choices[0]
                 self.log.info("choose default download manager: %s", self._default_dl.name)
                 ndm = self._default_dl
-            self._dl_instance[collection.id] = dlm = ndm(self, download_path=collection.download_path)
+            dlp = collection.download_path
+            if not dlp:
+                dlp = os.path.expanduser(self.app.config.get("main", "download_dir"))
+                if dlp != os.path.sep:
+                    dlp = os.path.join(os.getcwd(), dlp)
+                dlp = os.path.join(dlp, collection.basename)
+
+            self._dl_instance[collection.id] = dlm = ndm(self, download_path=dlp)
             dlm.start()
             return dlm
 
