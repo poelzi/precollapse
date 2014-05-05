@@ -5,6 +5,7 @@ Commands for collection management
 
 import logging
 import os.path
+import asyncio
 
 from ..base import Lister, ShowOne, Command
 from .. import exceptions as exc
@@ -92,6 +93,27 @@ class Mkdir(Command, EntryMod):
                                type=TYPE_DIRECTORY)
         return entry.dump(details=True)
 
+class Clear(Command):
+    "Clears all downloaded files from entry"
+    name = "clear"
+
+    log = logging.getLogger(__name__)
+
+    PARAMETERS = [
+        ('path', {"nargs":'+'}),
+        ]
+
+    def take_action(self, parsed_args):
+        from ..db.model import Collection
+        from ..db import create_session
+        session = create_session()
+        for path in parsed_args.path:
+            res = Collection.lookup(session, path)
+            if not res:
+                self.log.error("can't find: %s", path)
+            else:
+                self.log.info("clear %s", path)
+                yield from asyncio.wait_for(self.app.manager.get_download_manager(res.collection).clear_entry(res))
 
 
-__all__ = [Entry_Add, Mkdir]
+__all__ = [Entry_Add, Mkdir, Clear]

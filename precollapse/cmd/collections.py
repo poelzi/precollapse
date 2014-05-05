@@ -5,8 +5,7 @@ Commands for collection management
 
 import logging
 
-from cliff.command import Command
-from ..base import Lister, ShowOne
+from ..base import Lister, ShowOne, Command
 from IPython import embed
 
 
@@ -38,12 +37,11 @@ class Collection_Add(ShowOne):
 
     log = logging.getLogger(__name__)
 
-    def get_parser(self, prog_name):
-        parser = super(Collection_Add, self).get_parser(prog_name)
-        parser.add_argument('name', nargs=1)
-        parser.add_argument('--owner', help='owner of collection')
-        parser.add_argument('--gpgid', help='gpg id for signing')
-        return parser
+    PARAMETERS = [
+        ('name', {"nargs":1}),
+        ('--owner', {"help":'owner of collection'}),
+        ('--gpgid', {"help":'gpg id for signing'})
+    ]
 
     def take_action(self, parsed_args):
         from ..db.model import Collection

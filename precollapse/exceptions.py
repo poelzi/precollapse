@@ -31,7 +31,8 @@ class ParentNotFound(EntryNotFound):
 class CollectionNotFound(EntryNotFound):
     pass
 
-
-
 class CollectionMultipleChoices(CollapseException):
+    pass
+
+class DownloadManagerException(CollapseException):
     pass

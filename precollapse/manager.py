@@ -8,6 +8,7 @@ from .shell import PrecollapseApp
 from .cmd import register_commands
 from IPython import embed
 from . import db, base
+import asyncio
 
 
 class CollapseManager(PluginManager):
@@ -27,6 +28,7 @@ class CollapseManager(PluginManager):
         register_commands(self)
         self.collectPlugins()
         self.load_all()
+        self.loop = None
 
 
 
@@ -63,6 +65,7 @@ class CollapseManager(PluginManager):
     def get_all_backends(self):
         return self._backends.values()
 
+    @asyncio.coroutine
     def get_download_manager(self, collection):
         if collection.id in self._dl_instance:
             return self._dl_instance[collection.id]
@@ -91,7 +94,8 @@ class CollapseManager(PluginManager):
                 dlp = os.path.join(dlp, collection.basename)
 
             self._dl_instance[collection.id] = dlm = ndm(self, download_path=dlp)
-            dlm.start()
+            print("dostart")
+            yield from dlm.start()
             return dlm
 
     def get_download_manager_class(self, name):

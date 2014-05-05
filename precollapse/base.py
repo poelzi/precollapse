@@ -37,17 +37,21 @@ class Backend(object):
     def weight_entry(self, entry):
         return UrlWeight.unable
 
-    @asyncio.coroutine
     def do_entry(self, entry):
         from .db import create_session
         session = create_session()
         session.add(entry)
+        rv = asyncio.Future()
         try:
-            yield from self.handle_entry(entry)
-            session.commit()
+            asyncio.Task(self.handle_entry(rv, entry))
         except Exception as e:
             self.log.exception(e)
             session.rollback()
+        # autocommit when entry was successfull
+        def commit(ftr):
+            session.commit()
+        rv.add_done_callback(commit)
+        return rv
 
     def handle_entry(self, entry):
         """
@@ -101,14 +105,19 @@ class CommandBackend(Backend):
     def process_update(self, entry, buffer_, strderr=False):
         pass
 
-    def task_done(self, entry, stderr=False, returncode=None):
+    def task_done(self, entry, stderr=False, returncode=None, future=None):
         # update entry
-        if stderr:
+        if returncode is not None and not future.done():
             self.log.info("task done %s rc:%s", entry, returncode)
             if returncode in self.valid_rc:
                 super(CommandBackend, self).success(entry, self.buffers[entry][1].getvalue())
+                if future:
+                    future.set_result((entry, True))
             else:
                 super(CommandBackend, self).failure(entry, self.buffers[entry][1].getvalue())
+                if future:
+                    future.set_result((entry, False))
+        if stderr:
             self.buffers[entry][1].truncate()
             self.buffers[entry][1].close()
         else:
@@ -116,12 +125,10 @@ class CommandBackend(Backend):
             self.buffers[entry][0].close()
         if self.buffers[entry][0].closed and self.buffers[entry][1].closed:
             del self.buffers[entry]
+            del self.jobs[entry]
 
-
-
-    @asyncio.coroutine
-    def handle_entry(self, entry):
-        args = self.get_command_args(entry)
+    def handle_entry(self, future, entry):
+        args = yield from self.get_command_args(entry)
 
         self.log.debug("run command: %s" %args)
         job = yield from asyncio.create_subprocess_exec(*args, stdin=None,
@@ -130,12 +137,16 @@ class CommandBackend(Backend):
         #task = asyncio.Task(job)
         @asyncio.coroutine
         def read_stdout(job):
-            while True:
-                data = yield from job.stdout.read()
-                if not data:
-                    self.task_done(entry, returncode=job.returncode)
-                    return
-                self.update_msg(entry, data)
+            try:
+                while True:
+                    data = yield from job.stdout.read()
+                    if not data:
+                        self.task_done(entry, returncode=job.returncode, future=future)
+                        return
+                    self.update_msg(entry, data)
+            except Exception as e:
+                self.log.exception(e)
+                self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
 
         @asyncio.coroutine
         def read_stderr(job):
@@ -143,23 +154,24 @@ class CommandBackend(Backend):
                 while True:
                     data = yield from job.stderr.read(10)
                     if not data:
-                        self.task_done(entry, stderr=True, returncode=job.returncode)
+                        self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
                         return
                     self.update_msg(entry, data, stderr=True)
             except Exception as e:
                 self.log.exception(e)
+                self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
 
         asyncio.Task(read_stdout(job))
         asyncio.Task(read_stderr(job))
-
-        self.jobs.append(job)
+        self.jobs[entry] = job
+        #tsk = asyncio.Task(job.wait())
 
     def get_command_args(self, entry):
         raise NotImplemented
 
     def start_backend(self, daemon):
         self.daemon = daemon
-        self.jobs = []
+        self.jobs = {}
         self.buffers = {}
 
 class DownloadManager(object):
@@ -169,14 +181,18 @@ class DownloadManager(object):
     quality = 0
     name = "plain"
 
-    def __init__(self, manager, download_path=None):
+    def __init__(self, manager, download_path=None, collection=None):
         self.manager = manager
         self.download_path = download_path
+        self.collection = collection
 
+    @asyncio.coroutine
     def start(self):
+        #FIXME async this
         os.makedirs(self.download_path, exist_ok=True)
 
 
+    @asyncio.coroutine
     def prepare_entry(self, entry, relpath=None):
         """
         Prepare everything for the file to be added to the collection.
@@ -189,9 +205,25 @@ class DownloadManager(object):
                     exist_ok=True)
         return rv
 
+    def _rm_recrusive(self, path):
+        for (dirpath, dirnames, filenames) in os.walk(path, topdown=False, onerror=None, followlinks=False):
+            for fn in filenames:
+                os.unlink(os.path.join(dirpath, fn))
+            for dn in dirnames:
+                os.rmdir(os.path.join(dirpath, dn))
+            #print(dirpath, dirnames, filenames)
 
+    def clear_entry(self, entry):
+        """
+        Removes all files downloaded into the entry
+        """
+        path = os.path.join(self.download_path, entry.full_path[1:])
+        if self.manager.loop:
+            yield from asyncio.wait_for(self._rm_recrusive(path), None)
+        else:
+            self._rm_recrusive(path)
 
-
+    @asyncio.coroutine
     def entry_done(self, entry, ):
         """
         Mark file to be successfull downloaded
