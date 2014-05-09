@@ -1,10 +1,12 @@
 from precollapse import base, exceptions as exc
 from precollapse.exceptions import CommandMissing
 from precollapse.utils import which
+from precollapse.base import CommandBackend, UrlWeight
 import subprocess
 import asyncio
 import os
 import logging
+import urllib
 
 class GitBackend(CommandBackend):
 

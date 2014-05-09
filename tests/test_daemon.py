@@ -123,6 +123,7 @@ class TestDaemon(unittest.TestCase):
         backend = man.get_backend("wget")
         self.assertEqual(backend.name, "wget")
 
+
     @async_test
     def test_download_manager(self):
         man = manager.CollapseManager()
@@ -136,7 +137,15 @@ class TestDaemon(unittest.TestCase):
 
         example = model.Entry(name="e1", parent_id=col.get_root().id, url="http://www.example.com", priority=10,
                               collection_id=col.id)
-        session.add(example)
+        gc = model.Entry(name="git-clone", parent_id=col.get_root().id,
+                              url="https://github.com/poelzi/git-clone-test.git",
+                              collection_id=col.id)
+
+        session.add(example, gc)
+
+        gc_back, gc_points = man.get_backend_for_entry(gc)
+        self.assertEqual(gc_back.name, "git")
+
         session.commit()
         # test download_mananger
         for name,dm in man._download_managers.items():
