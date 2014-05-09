@@ -15,8 +15,6 @@ class Daemon(Command):
         ]
 
     def take_action(self, parsed_args):
-        from ..daemon import Daemon
-        daemon = Daemon(self.app.manager)
-        daemon.run()
+        self.app.manager.start_daemon()
         return
 

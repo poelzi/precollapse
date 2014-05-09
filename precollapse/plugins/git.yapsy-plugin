@@ -1,8 +1,8 @@
 [Core]
-Name = git
-Module = git
+Name = git-annex
+Module = git_annex
 
 [Documentation]
-Description = git support
+Description = git-annex support
 Author = precollapse
 Version = 0.1

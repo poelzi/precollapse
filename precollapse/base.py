@@ -14,6 +14,7 @@ class UrlWeight(enum.Enum):
     prefect   = 80
     very_good = 70
     good      = 60
+    likely    = 55
     normal    = 50
     bad       = 40
     very_bad  = 30
@@ -181,7 +182,8 @@ class DownloadManager(object):
     quality = 0
     name = "plain"
 
-    def __init__(self, manager, download_path=None, collection=None):
+    def __init__(self, manager, download_path, collection=None):
+        assert download_path
         self.manager = manager
         self.download_path = download_path
         self.collection = collection
@@ -200,7 +202,8 @@ class DownloadManager(object):
 
         returns absolute path
         """
-        rv = os.path.join(self.download_path, entry.full_path[1:])
+        print(entry.system_path)
+        rv = os.path.join(self.download_path, entry.system_path)
         os.makedirs(rv,
                     exist_ok=True)
         return rv

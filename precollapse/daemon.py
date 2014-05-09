@@ -1,7 +1,7 @@
 import asyncio
 from .db import model
 from .db import create_session
-from sqlalchemy import or_, desc, asc
+from sqlalchemy import or_,and_, desc, asc
 import queue
 import sys
 import logging
@@ -36,7 +36,7 @@ class Daemon(object):
         self.check_interval = check_interval
         self.in_check = weakref.WeakSet()
         self.workpool = ThreadPoolExecutor(5)
-        self.loop = asyncio.get_event_loop()
+        self.loop = manager.loop
         self.manager.loop = self.loop
         self.blacklist = set()
 
@@ -47,11 +47,14 @@ class Daemon(object):
                 job = yield from self.jobs.get()
                 #yield from asyncio.sleep(1000)
                 entry = job.entry
+                session = create_session()
+                session.add(entry)
                 self.log.info("check entry: %s" %entry.full_path)
                 if entry.plugin is None:
                     self.log.debug("detect plugin for entry: %s" %entry.id)
                     (plugin, prio) = self.manager.get_backend_for_entry(entry)
                     entry.plugin = plugin.name
+                    session.commit()
                     self.log.debug("use plugin for entry %s: %s (prio=%s)" %(entry.id, plugin.name, prio))
                     if not plugin:
                         self.log.error("can't find plugin to handle url %s" %(entry.id))
@@ -118,7 +121,6 @@ class Daemon(object):
         while True:
             try:
                 self.log.debug("check jobs")
-                session = create_session()
                 now = datetime.datetime.now()
                 next_check = now + datetime.timedelta(seconds=60)
 
@@ -126,11 +128,14 @@ class Daemon(object):
                 def get_entries():
                     try:
                         qsession = create_session()
-                        query = qsession.query(model.Entry).filter(or_(model.Entry.next_check==None,
-                                                                    model.Entry.next_check<now)) \
-                                                           .filter(model.Entry.type.isnot(model.TYPE_DIRECTORY)) \
-                                                           .order_by(desc(model.Entry.priority))
+                        query = qsession.query(model.Entry).\
+                            filter(or_(model.Entry.next_check==None,
+                                       model.Entry.next_check<now)) \
+                            .filter(and_(model.Entry.type.isnot(model.EntryType.directory),
+                                         model.Entry.type.isnot(model.EntryType.root))) \
+                            .order_by(desc(model.Entry.priority))
                         for entry in query:
+                            print(entry)
                             qsession.expunge(entry)
                             yield entry
 
@@ -148,7 +153,7 @@ class Daemon(object):
                 self.log.exception(e)
                 sys.exit(1)
 
-    def run(self):
+    def run(self, run_forever=True):
 
         # start all backends
         for backend in self.manager.get_all_backends():
@@ -157,9 +162,9 @@ class Daemon(object):
         asyncio.Task(self.check_jobs())
         for i in range(self.manager.app.config.getint("daemon", "worker", fallback=1)):
             asyncio.Task(self.do_job())
-        webserver.webapp.run(greeting=True, run_forever=False)
+
         try:
-            self.loop.run_forever()
+            webserver.webapp.run(run_forever=run_forever)
         except KeyboardInterrupt:
             sys.exit(0)
 

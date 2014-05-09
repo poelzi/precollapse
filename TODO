@@ -13,9 +13,12 @@ Plugins
 -------
 
 - curl based plugin (curl bindings). Implement own recursive logic that creates subentries in the tree
-- git-annex based download_manager
+- feedreader
 - mediawiki plugin
 - rtorrent plugin
 - metadata extractors
 
 
+Done
+----
+- git-annex based download_manager

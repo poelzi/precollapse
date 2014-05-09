@@ -6,156 +6,70 @@ import asyncio
 import os
 import logging
 
-class GitAnnexDownloadManager(base.DownloadManager):
-    """
-    Download manager that stores all files in a git-annex tree
-    """
+class GitBackend(CommandBackend):
 
-    log = logging.getLogger(__name__)
-    name = "git-annex"
-    quality = 50
+    name = "git"
+    #arguments = (
+        #("--recrusive", {"action": "store_true"}),
+        #)
 
-    def _git_start(self):
-        print("init git", self.download_path)
-        os.makedirs(self.download_path, exist_ok=True)
-        #subprocess.call(args, *, stdin=None, stdout=None, stderr=None, shell=False, timeout=None)
-        if not os.path.exists(os.path.join(self.download_path, ".git")):
+    def process_update(self, entry, buffer_, stderr=False):
+        #print(buffer_)
+        #Length: 86069 (84K) [text/html]
+        #if len(buffer_.getvalue()) > 300:
+        #    embed()
+        if not stderr:
+            return
 
-            proc = subprocess.Popen(["git", "init"],
-                                    stderr=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    cwd=self.download_path)
-            try:
-                outs, errs = proc.communicate(timeout=60)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                outs, errs = proc.communicate()
-            print(outs, errs)
-            if proc.returncode != 0:
-                raise exc.DownloadManagerException("can't initialize git repository for %s: %s" %(self.download_path, errs))
-        if not os.path.exists(os.path.join(self.download_path, ".git", "annex")):
-            name = self.collection and self.collection.name or ""
-            proc = subprocess.Popen(["git-annex", "init", name],
-                                    stderr=subprocess.PIPE,
-                                    stdout=subprocess.PIPE,
-                                    cwd=self.download_path)
-            try:
-                outs, errs = proc.communicate(timeout=60)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                outs, errs = proc.communicate()
-            print(outs, errs, proc.returncode)
-            if proc.returncode != 0:
-                raise exc.DownloadManagerException("can't initialize git-annex repository for %s: %s" %(self.download_path, errs))
+        match = RE_LENGTH.search(buffer_.getvalue())
+        #print("match", match)
+        if match:
+            length, content_type = match.groups()
+            print(length, content_type)
 
-    @asyncio.coroutine
-    def start(self):
-        #yield from asyncio.wait_for(self._git_start(), None)
-        yield from self.manager.loop.run_in_executor(None, self._git_start)
 
-    @asyncio.coroutine
-    def prepare_entry(self, entry, relpath=None):
-        """
-        Prepare everything for the file to be added to the collection.
-        relpath is determined by the backend
-
-        returns absolute path
-        """
-        rv = os.path.join(self.download_path, entry.full_path[1:])
-        yield from self.manager.loop.run_in_executor(None, self._prepare_entry, entry, rv)
-
-        return rv
-
-    def _prepare_entry(self, entry, path):
-        os.makedirs(path, exist_ok=True)
-        proc = subprocess.Popen(["git-annex", "unlock", path],
-                          stdout=subprocess.PIPE,
-                          stderr=subprocess.DEVNULL,
-                          cwd=self.download_path)
-        stdout, stderr = proc.communicate()
-        print(stdout, stderr)
-
-    def _rm_recrusive(self, path):
-        for (dirpath, dirnames, filenames) in os.walk(path, topdown=False, onerror=None, followlinks=False):
-            for fn in filenames:
-                os.unlink(os.path.join(dirpath, fn))
-            for dn in dirnames:
-                os.rmdir(os.path.join(dirpath, dn))
-            #print(dirpath, dirnames, filenames)
-
-    def clear_entry(self, entry):
-        """
-        Removes all files downloaded into the entry
-        """
-        path = os.path.join(self.download_path, entry.full_path[1:])
-        if self.manager.loop:
-            yield from asyncio.wait_for(self._rm_recrusive(path), None)
-        else:
-            self._rm_recrusive(path)
-
-    @asyncio.coroutine
-    def entry_done(self, entry):
-        """
-        Mark file to be successfull downloaded
-        """
-        print("git annex, done")
-        path = entry.full_path[1:] #os.path.join(self.download_path, entry.full_path[1:])
-        print("git-annex", "add", path)
-        proc = yield from asyncio.create_subprocess_exec(
-            "git-annex", "add", path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            cwd=self.download_path)
+    def weight_entry(self, entry):
         try:
-            stdout, _ = yield from proc.communicate()
-        except:
-            proc.kill()
-            yield from proc.wait()
-            raise
-        exitcode = yield from proc.wait()
-        print("gia", stdout)
-        proc = yield from asyncio.create_subprocess_exec(
-            "git", "status", "-s", "--ignore-submodules=dirty", path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            cwd=self.download_path)
+            if not entry.url:
+                return UrlWeight.unable
+            url = urllib.parse.urlparse(entry.url)
+            # typical git url
+            if url.scheme == "git" or \
+               (url.scheme in ("ssh", "https", "http") and url.path[-4:] == ".git"):
+                return UrlWeight.very_good
+            # a likeliy url
+            if url.scheme in ("ssh", "https", "http") and url.path.find(".git") > -1:
+                return UrlWeight.likeliy
+            return UrlWeight.unable
+        except Exception as e:
+            self.log.debug("can't handle url: %s" %e)
+            return UrlWeight.unable
 
-        stdout, _ = yield from proc.communicate()
-        if len(stdout):
-            if exitcode != 0:
-                self.log.error("can't add files to git-annex tree: %s", stdout)
-                return
-            proc = yield from asyncio.create_subprocess_exec(
-                "git", "commit", path, "-m", "entry: %s" %entry.full_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                cwd=self.download_path)
-            try:
-                stdout, _ = yield from proc.communicate()
-            except:
-                proc.kill()
-                yield from proc.wait()
-                raise
-            exitcode = yield from proc.wait()
-            print(stdout, exitcode)
-            if exitcode != 0:
-                self.log.error("can't commit to git-annex tree: %s", stdout)
-                return
-
-        return
-
+    @asyncio.coroutine
+    def get_command_args(self, entry):
+        #embed()
+        dm = yield from self.manager.get_download_manager(entry.collection)
+        out_path = yield from dm.prepare_entry(entry, None)
+        def check_exists(out_path):
+            if os.path.exists(os.path.join(out_path, ".git")):
+                return True
+            return False
+        exists = yield from self.daemon.loop.run_in_executor(None, check_exists, out_path)
+        print("out_path", out_path, exists)
+        if exists:
+            args = ["git", "--git-dir=%s" %out_path, "pull"]
+        else:
+            args = ["git", "clone", entry.url, out_path]
+        return args
 
 
 class GitPlugin(base.Plugin):
     name = "git"
-    download_manager = GitAnnexDownloadManager
+    backends = [GitBackend]
 
     def check(self):
         if not which("git"):
             raise CommandMissing("git missing")
-        if not which("git-annex"):
-            self.log.info("git-annex missing. Disable git-annex download manager")
-            self.download_manager = None
         return True
 
     def print_name(self):

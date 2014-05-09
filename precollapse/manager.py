@@ -28,7 +28,7 @@ class CollapseManager(PluginManager):
         register_commands(self)
         self.collectPlugins()
         self.load_all()
-        self.loop = None
+        self.loop = asyncio.get_event_loop()
 
 
 
@@ -129,9 +129,16 @@ class CollapseManager(PluginManager):
                 deactivatePluginByName(pluginInfo.name)
         # initialize DownloadManager
         #self.download_manager = best_dl(self)
+        print(self._download_managers)
 
     def run_shell(self, argv):
         return self.app.run(argv)
+
+    def start_daemon(self, run_forever=True):
+        from .daemon import Daemon
+        daemon = Daemon(self)
+        daemon.run(run_forever=run_forever)
+
 
 # create singleton
 manager = None

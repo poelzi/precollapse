@@ -1,4 +1,4 @@
-ipython
+IPython
 yapsy
 cliff
 SQLAlchemy
@@ -6,3 +6,6 @@ alembic
 enum34
 asyncio
 websockets
+PyYAML
+Vase
+nose2

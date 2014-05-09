@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, BLOB, Enum, ForeignKey,\
-                       DateTime, Interval, Boolean, asc, desc, UniqueConstraint
-from sqlalchemy.types import TypeDecorator
+                       DateTime, Interval, Boolean, asc, desc, UniqueConstraint, event
 from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, backref, object_session
@@ -9,58 +8,35 @@ import uuid
 import json
 import os
 import datetime
-import enum
 import math
 
 from sqlalchemy import create_engine
+from IPython import embed
 
 from . import Base, create_session
-from ..utils import AlchemyEncoder, pathsplit, pathjoin, fib
+from ..utils import AlchemyEncoder, pathsplit, pathjoin, fib, SEnum
 from .. import exceptions as exc
 
 
 PLUGIN_NAME_LENGTH=30
 
-TYPE_DIRECTORY = 'DIRECTORY'
-TYPE_COLLECTION = 'COLLECTION'
-TYPE_COLLECTION_MEMBER = 'COLLECTION_MEMBER'
-TYPE_SINGLE = 'SINGLE'
-ENTRY_TYPES = [TYPE_DIRECTORY, TYPE_COLLECTION, TYPE_COLLECTION_MEMBER, TYPE_SINGLE]
+class EntryType(SEnum):
+    root = 'ROOT'
+    directory = 'DIRECTORY'
+    collection = 'COLLECTION'
+    collection_member = 'COLLECTION_MEMBER'
+    single = 'SINGLE'
 
-META_STRING = 'STRING'
-META_JSON = 'JSON'
-META_INTEGER = 'INTEGER'
-META_BLOB = 'BLOB'
-META_NONE = 'NONE'
-META_TYPES = [META_STRING, META_JSON, META_INTEGER, META_BLOB, META_NONE]
+class MetaType(SEnum):
+    string = 'STRING'
+    json = 'JSON'
+    integer = 'INTEGER'
+    blob = 'BLOB'
+    none = 'NONE'
 
-
-
-
-class AEnum(TypeDecorator):
-    """Safely coerce Python bytestrings to Unicode
-    before passing off to the database."""
-
-    impl = Enum
-
-    def process_bind_param(self, value, dialect):
-        if isinstance(value, enum.Enum):
-            value = value.value
-        return value
-
-
-
-class EntryState(enum.Enum):
+class EntryState(SEnum):
     download = "DOWNLOAD"
     done = "DONE"
-
-    def __str__(self):
-        return self.value
-
-    def __eq__(self, other):
-        if isinstance(other, enum.Enum):
-            return self.value == other.value
-        return self.value == other
 
 
 def suuid():
@@ -85,9 +61,6 @@ def filter_dump(rv, filter_):
     return rv
 
 
-def enum2alch(en):
-    # creates a list of enum strings
-    return map(lambda x: str(x), list(en))
 
 class ModelMixin(object):
     def dump(self, filter_=None, details=False, all_=False, dict_=False):
@@ -150,17 +123,17 @@ class Collection(Base, ModelMixin):
     def create(session, *args, **kwargs):
         nc = Collection(*args, **kwargs)
         session.add(nc)
-        root = Entry(name="/", type=TYPE_DIRECTORY, parent_id=None, collection=nc)
+        root = Entry(name="/", type=EntryType.root, parent_id=None, collection=nc)
         session.add(root)
         return nc
 
     def mkdir(self, name):
         session = object_session(self)
-        if self.type != TYPE_DIRECTORY:
+        if self.type != EntryType.directory:
             raise exc.EntryTypeError("can't create directory under non directory")
         if self.has_child(name):
             raise exc.EntryExistsError("file: %s already exists" %name)
-        root = Entry(name=name, type=TYPE_DIRECTORY, parent_id=self.id, collection=self.collection.id)
+        root = Entry(name=name, type=EntryType.directory, parent_id=self.id, collection=self.collection.id)
         session.add(root)
 
 
@@ -206,7 +179,7 @@ class Collection(Base, ModelMixin):
         """
         Return the Root Directory Entry of the collection
         """
-        return object_session(self).query(Entry).filter(Entry.collection == self, Entry.type.is_(TYPE_DIRECTORY), Entry.parent_id.is_(None)).one()
+        return object_session(self).query(Entry).filter(Entry.collection == self, Entry.type.is_(EntryType.root), Entry.parent_id.is_(None)).one()
 
     @property
     def size(self):
@@ -219,15 +192,21 @@ class Collection(Base, ModelMixin):
     def changed(self):
         return self.updated or self.created
 
+    def export(self, formatter=None):
+        if not formatter:
+            from .formatter import yaml
+            formatter = yaml.Formatter()
+        return formatter.export(self)
+
 class Entry(Base, ModelMixin):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, index=True, doc="name of directroy")
-    type = Column(AEnum(*ENTRY_TYPES), index=True)
+    type = Column(EntryType.sql_type(), index=True)
     plugin = Column(String(PLUGIN_NAME_LENGTH), doc="plugin handling the entry")
     uuid = Column(String(36), index=True, unique=True, default=suuid)
     url = Column(Text)
     arguments = Column(Text)
-    state = Column(AEnum(*enum2alch(EntryState)))
+    state = Column(EntryState.sql_type())
     created = Column(DateTime, default=datetime.datetime.now)
     updated = Column(DateTime, default=None, index=True)
     enabled = Column(Boolean, nullable=True, default=None)
@@ -258,6 +237,8 @@ class Entry(Base, ModelMixin):
     __tablename__ = 'entry'
     __table_args__ = (
         UniqueConstraint(parent_id, name, name='uix_entry_unique_name'),
+        # FIXME
+        #UniqueConstraint(collection_id, type==EntryType.root , name='uix_entry_unique_name'),
     )
 
     EXPORT = (
@@ -286,7 +267,7 @@ class Entry(Base, ModelMixin):
 
     def set_success(self, msg=None):
         session = create_session()
-        self.last_error = None
+        self.last_failure = None
         now = datetime.datetime.now()
         self.last_success = now
         self.success_msg = msg
@@ -344,6 +325,19 @@ class Entry(Base, ModelMixin):
                 parts.insert(0, "")
         return pathjoin(parts)
 
+    @property
+    def system_path(self):
+        #session = object_session(self)
+        session = create_session()
+        parts = [self.name]
+        cur = self
+        #embed()
+        while cur.parent_id != None:
+            cur = session.query(Entry).filter(Entry.id==cur.parent_id).one()
+            if cur.name != "/":
+                parts.insert(0, cur.name)
+        return os.path.join(*parts)
+
 
     def __repr__(self):
         return "<Entry('%s' id='%s'>" %(self.name, self.id)
@@ -379,13 +373,34 @@ class Entry(Base, ModelMixin):
                 rv['meta'][name] = m.value
         return rv
 
+    @staticmethod
+    def validate_name(target, value, oldvalue, initiator):
+        #print(target)
+        #embed()
+        if value.find("/") != -1:
+            initiator.root_name = True
+            if hasattr(target, "is_root") and not target.is_root:
+                raise exc.ValueError("can't name contain /")
+        else:
+            initiator.root_name = False
 
+    @staticmethod
+    def validate_type(target, value, oldvalue, initiator):
+        #print(target)
+        #embed()
+        initiator.is_root = value == EntryType.root
+        if hasattr(target, "root_name") and target.root_name:
+            raise exc.ValueError("name can't contain /")
+
+
+event.listen(Entry.name, 'set', Entry.validate_name)
+event.listen(Entry.type, 'set', Entry.validate_type)
 
 class Meta(Base):
     id = Column(Integer, primary_key=True)
     entry_id = Column(Integer, ForeignKey('entry.id'))
     plugin = Column(String(PLUGIN_NAME_LENGTH), index=True, doc="plugin handling matadata")
-    type = Column(AEnum(*META_TYPES), index=True)
+    type = Column(MetaType.sql_type(), index=True)
     name = Column(String(255), index=True, doc="name of value key")
     _value = Column(BLOB())
 

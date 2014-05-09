@@ -13,7 +13,7 @@ from .. import exceptions as exc
 class EntryMod(object):
     def add_entry(self, path, **kwargs):
         from ..db.model import Collection, Entry
-        from ..db import Session
+        from ..db import create_session
 
         print(path)
         if os.path.isabs(path):
@@ -24,7 +24,7 @@ class EntryMod(object):
             raise exc.ArgumentError("path must be absolute")
 
         parent, fname = os.path.split(path)
-        session = Session()
+        session = create_session()
         rv = Collection.lookup(session,
                                parent)
         if not rv:
@@ -64,7 +64,6 @@ class Entry_Add(ShowOne, EntryMod):
 
     def take_action(self, parsed_args):
 
-        from ..db import Session
         print(parsed_args)
 
         entry = self.add_entry(parsed_args.name[0],

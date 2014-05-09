@@ -57,5 +57,32 @@ class Collection_Add(ShowOne):
         return x.keys(), x.values()
 
 
+class Collection_Export(Command):
+    "A simple command that prints a message."
+    name = "export"
 
-__all__ = [Collection_List, Collection_Add]
+    log = logging.getLogger(__name__)
+
+    PARAMETERS = [
+        ('collection',     {"nargs":1}),
+        ('--format', "-f", {"help":'export format', "choices":['yaml']}),
+        ('--output', "-o", {"help":''})
+        ]
+
+    def take_action(self, parsed_args):
+        from ..db.model import Collection
+        from ..db import create_session
+        print(parsed_args)
+        #Collection.create(
+        session = create_session()
+        print(parsed_args)
+        q = session.query(Collection).filter(Collection.name==parsed_args.collection[0]).one()
+        print("export")
+        rv = q.export()
+        print(rv)
+        return "blubb"
+
+
+
+
+__all__ = [Collection_List, Collection_Add, Collection_Export]

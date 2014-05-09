@@ -16,6 +16,9 @@ class CollectionException(CollapseException):
 class EntryError(CollapseException):
     pass
 
+class ValueError(EntryError):
+    pass
+
 class EntryExistsError(EntryError):
     pass
 
