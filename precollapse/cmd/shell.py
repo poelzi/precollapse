@@ -47,6 +47,7 @@ class Ls(Lister):
             c = entry.dump(details=details)
             keys = c[0]
             vars_.append(c[1])
+        print(keys, vars_)
         return (keys, vars_)
 
     def root(self, query=None, details=False):

@@ -1,4 +1,4 @@
-import logging
+import logging, logging.config
 import sys
 
 from gettext import gettext as _
@@ -110,6 +110,11 @@ class PrecollapseApp(App):
 
         read = config.read([default, path])
         self.log.debug("read config files: %s" %read)
+        logging.config.fileConfig(config, disable_existing_loggers=True)
+        #if path:
+        #    logging.config.fileConfig(path, disable_existing_loggers=False)
+
+
 
     def initialize_app(self, argv):
         self.log.debug('initialize precollapse')

@@ -43,3 +43,6 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(len(MySenum.choices()), 2)
         self.assertEqual(MySenum.choices(), ['blubb', 'second'])
         self.assertTrue(isinstance(MySenum.sql_type(), utils.SqlEnum))
+        self.assertEqual(str(MySenum.bla), "blubb")
+        self.assertEqual(str(MySenum.second), "second")
+        self.assertEqual(repr(MySenum.bla), "<MySenum.bla: 'blubb'>")

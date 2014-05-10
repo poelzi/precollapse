@@ -28,7 +28,7 @@ class WgetBackend(CommandBackend):
         #print("match", match)
         if match:
             length, content_type = match.groups()
-            print(length, content_type)
+            #print(length, content_type)
 
 
     def weight_entry(self, entry):
@@ -48,7 +48,7 @@ class WgetBackend(CommandBackend):
         dm = yield from self.manager.get_download_manager(entry.collection)
         out_path = yield from dm.prepare_entry(entry, None)
         print("out_path", out_path)
-        args = ["wget", "--progress=dot", "-P", out_path, "-N", entry.url]
+        args = ["wget", "--progress=dot", "-c", "-P", out_path, "-N", entry.url]
         return [args]
 
 class WgetPlugin(base.Plugin):

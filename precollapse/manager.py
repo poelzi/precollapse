@@ -122,6 +122,9 @@ class CollapseManager(PluginManager):
             except exceptions.CommandMissing as e:
                 self.log.warning("missing command: %s, disable plugin: %s" %(e, pluginInfo.name))
                 deactivatePluginByName(pluginInfo.name)
+            except (exceptions.DependencyMissing, exceptions.ModuleMissing) as e:
+                self.log.warning("missing dependency: %s, disable plugin: %s" %(e, pluginInfo.name))
+                deactivatePluginByName(pluginInfo.name)
             except Exception as e:
                 import traceback
                 traceback.print_exc(e)

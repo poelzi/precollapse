@@ -3,9 +3,20 @@
 import sys, os
 sys.path.insert(0,os.path.abspath(os.path.join(os.path.dirname(__file__),'..')))
 
+
+
 try:
     from IPython import embed
     __builtins__.embed = embed
+
+    def noop():
+        pass
+
+    once = False
+    def oembed():
+        __builtins__.embed = noop
+    __builtins__.oembed = oembed
+
 except ImportError:
     pass
 

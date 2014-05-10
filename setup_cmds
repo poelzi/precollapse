@@ -3,9 +3,11 @@ collection-add test1
 collection-add test2
 ls
 ls /test1
-info /test1
+show /test1
 entry-add /test1/python-enum https://docs.python.org/3/library/enum.html
 cd test1
 entry-add /test1/python-content https://docs.python.org/3/contents.html
 entry-add git-test https://github.com/poelzi/git-clone-test.git
-
+mkdir podcasts
+cd podcasts
+entry-add --plugin feedreader pentaradio http://c3d2.de/podcast.xml

@@ -1,4 +1,5 @@
 import os
+import re
 import enum
 
 def which(program):
@@ -52,7 +53,7 @@ class SqlEnum(TypeDecorator):
             value = value.value
         return value
 
-class SEnum(enum.Enum):
+class SEnum(str, enum.Enum):
     def __str__(self):
         return self.value
 
@@ -98,6 +99,13 @@ def abspath(*args):
     # we want trailing /
     suffix = (path[-1] == "/" and path != "/") and "/" or ""
     return os.path.abspath(path) + suffix
+
+def basename(path):
+    if "/" in path:
+        return path[path.rfind("/")+1:]
+    else:
+        return path
+
 
 def get_prompt(path):
     return '(precollapse) %s: ' %path

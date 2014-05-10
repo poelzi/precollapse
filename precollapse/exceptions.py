@@ -7,7 +7,13 @@ class DatabaseError(CollapseException):
 class ArgumentError(CollapseException):
     pass
 
-class CommandMissing(CollapseException):
+class DependencyMissing(CollapseException):
+    pass
+
+class CommandMissing(DependencyMissing):
+    pass
+
+class ModuleMissing(DependencyMissing):
     pass
 
 class CollectionException(CollapseException):

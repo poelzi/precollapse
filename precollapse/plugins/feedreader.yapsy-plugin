@@ -1,0 +1,8 @@
+[Core]
+Name = feedreader
+Module = feedreader
+
+[Documentation]
+Description = support subscriptions to rss/atom/... feeds.
+Author = precollapse
+Version = 0.1

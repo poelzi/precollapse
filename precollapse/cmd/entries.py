@@ -12,7 +12,7 @@ from .. import exceptions as exc
 
 class EntryMod(object):
     def add_entry(self, path, **kwargs):
-        from ..db.model import Collection, Entry
+        from ..db.model import Collection, Entry, EntryType
         from ..db import create_session
 
         print(path)
@@ -38,7 +38,7 @@ class EntryMod(object):
                        parent_id=rv.id,
                        url=kwargs.get('url', None), enabled=(not kwargs.get('disable', False)),
                        uuid=kwargs.get('uuid', None), plugin=kwargs.get('plugin', None),
-                       type=kwargs.get('type', None))
+                       type=kwargs.get('type', EntryType.single))
         session.add(nentry)
         session.commit()
         #rv = nentry.dump(details=True)
@@ -87,9 +87,9 @@ class Mkdir(Command, EntryMod):
         ]
 
     def take_action(self, parsed_args):
-        from ..db.model import TYPE_DIRECTORY
+        from ..db.model import ModelType
         entry = self.add_entry(parsed_args.path,
-                               type=TYPE_DIRECTORY)
+                               type=ModelType.directory)
         return entry.dump(details=True)
 
 class Clear(Command):

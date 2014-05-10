@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Text, BLOB, Enum, ForeignKey,\
                        DateTime, Interval, Boolean, asc, desc, UniqueConstraint, event, and_
 from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, backref, object_session
+from sqlalchemy.orm import relationship, backref, object_session, exc as sqlexc
 from sqlalchemy import or_
 import uuid
 import json
@@ -23,20 +23,24 @@ PLUGIN_NAME_LENGTH=30
 class EntryType(SEnum):
     root = 'ROOT'
     directory = 'DIRECTORY'
+    single = 'SINGLE'
     collection = 'COLLECTION'
     collection_member = 'COLLECTION_MEMBER'
+    collection_directory = 'COLLECTION_DIR'
     collection_single = 'COLLECTION_SINGLE'
-    single = 'SINGLE'
+
 
 class MetaType(SEnum):
     string = 'STRING'
     json = 'JSON'
     integer = 'INTEGER'
     blob = 'BLOB'
+    number = 'NUMBER'
     none = 'NONE'
 
 class EntryState(SEnum):
     download = "DOWNLOAD"
+    empty = 'EMPTY'
     done = "DONE"
 
 
@@ -202,7 +206,7 @@ class Collection(Base, ModelMixin):
 class Entry(Base, ModelMixin):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, index=True, doc="name of directroy")
-    type = Column(EntryType.sql_type(), index=True)
+    type = Column(EntryType.sql_type(), nullable=False, index=True, default=EntryType.single)
     plugin = Column(String(PLUGIN_NAME_LENGTH), doc="plugin handling the entry")
     uuid = Column(String(36), index=True, unique=True, default=suuid)
     url = Column(Text)
@@ -243,36 +247,57 @@ class Entry(Base, ModelMixin):
     )
 
     EXPORT = (
-        ("plugin", "updated", "state", "size", "name"),
-        ("id", "type", "uuid", "url", "arguments", "created", "enabled", "size_should"),
+        ("plugin", "type", "last_success", "state", "size", "name"),
+        ("id", "last_failure", "uuid", "url", "arguments",
+         "created", "enabled", "size_should"),
         ("updated", "last_success", "last_failure",
          "next_check", "error_msg", "success_msg")
         )
 
+    def __init__(self, *args, **kwargs):
+        if not 'collection_id' in kwargs:
+            if 'collection' in kwargs:
+                kwargs['collection_id'] = kwargs['collection'].id
+            elif 'parent' in kwargs:
+                kwargs['collection_id'] = kwargs['parent'].collection_id
+
+        if 'parent' in kwargs:
+            kwargs['parent_id'] = kwargs['parent'].id
+            del kwargs['parent']
+
+        return super(Entry, self).__init__(*args, **kwargs)
+
     @classmethod
-    def jobs_filter(cls, session, now):
-        return session.query(cls)\
+    def jobs_filter(cls, session, now, with_empty=False):
+        q = session.query(cls)\
                     .filter(or_(cls.next_check==None,
                                 cls.next_check<now)) \
-                    .filter(and_(cls.type.isnot(EntryType.directory),
-                                    cls.type.isnot(EntryType.root),
-                                    cls.type.isnot(EntryType.collection_member))) \
-                    .order_by(desc(cls.priority))
+                    .filter(or_(cls.type.is_(EntryType.single),
+                                cls.type.is_(EntryType.collection_single),
+                                cls.type.is_(EntryType.collection)))
+        if not with_empty:
+            q = q.filter(cls.state!=EntryState.empty)
+        return q.order_by(desc(cls.priority))
 
     @property
     def size(self):
         # maybe do update here ?
         return self.size_is
 
-    def set_error(self, msg):
+    def set_error(self, msg, unhandled=False):
         session = create_session()
         self.error_msg = msg
-        now = datetime.datetime.now()
-        self.last_failure = now
-        self.failure_count += 1
-        self.next_check = (now +
-                           datetime.timedelta(
-                               minutes=fib(min(self.failure_count, 10))))
+        if unhandled:
+            self.state = EntryState.empty
+            self.next_check = None
+            self.failure_count = 0
+        else:
+            now = datetime.datetime.now()
+            self.last_failure = now
+            self.failure_count += 1
+            self.next_check = (now +
+                            datetime.timedelta(
+                                minutes=fib(min(self.failure_count, 10))))
         session.add(self)
         session.commit()
 
@@ -327,7 +352,6 @@ class Entry(Base, ModelMixin):
         session = create_session()
         parts = [self.name]
         cur = self
-        #embed()
         while cur.parent_id != None:
             cur = session.query(Entry).filter(Entry.id==cur.parent_id).one()
             if cur.name != "/":
@@ -361,6 +385,19 @@ class Entry(Base, ModelMixin):
         session = object_session(self)
         return session.query(Entry).filter(Entry.parent_id==self.id, Entry.name==name).one()
 
+    def get_or_create_child(self, name, args):
+        session = object_session(self)
+        try:
+            rv = session.query(Entry).filter(Entry.parent_id==self.id, Entry.name==name).one()
+            return rv, False
+        except sqlexc.NoResultFound:
+            rv = Entry(**args)
+            session.add(rv)
+            session.flush()
+            return rv, True
+
+
+
     def descent(self, name):
         """
         Same as returning get_child(name) but may just change some internal
@@ -371,9 +408,9 @@ class Entry(Base, ModelMixin):
 
     def dump(self, filter_=None, details=False, all_=False, dict_=False):
         rv = ModelMixin.dump(self, filter_=filter_, all_=all_, details=details, dict_=dict_)
-        add_if(rv, 'last_success', self.last_success, filter_)
-        add_if(rv, 'last_failure', self.last_failure, filter_)
-        add_if(rv, 'failure_count', self.failure_count, filter_)
+        #add_if(rv, 'last_success', self.last_success, filter_)
+        #add_if(rv, 'last_failure', self.last_failure, filter_)
+        #add_if(rv, 'failure_count', self.failure_count, filter_)
         #embed()
         if len(self.meta) and (filter_ == None or 'meta' in filter_):
             rv['meta'] = meta = {}
@@ -403,6 +440,28 @@ class Entry(Base, ModelMixin):
         if hasattr(target, "root_name") and target.root_name:
             raise exc.ValueError("name can't contain /")
 
+    def set_meta(self, name, value, plugin=None):
+        session = object_session(self)
+        try:
+            meta = session.query(Meta).filter(Meta.entry_id.is_(self.id),
+                                              Meta.name.is_(name),
+                                              Meta.plugin.is_(plugin)).one()
+        except sqlexc.NoResultFound:
+            meta = Meta(entry_id=self.id, name=name, plugin=plugin)
+            session.add(meta)
+            session.flush()
+        meta.value = value
+        session.flush()
+
+    def get_meta(self, name, plugin=None, default=None):
+        session = object_session(self)
+        try:
+            return session.query(Meta).filter(Meta.entry_id.is_(self.id),
+                                              Meta.name.is_(name),
+                                              Meta.plugin.is_(plugin)).one().value
+        except sqlexc.NoResultFound:
+            return default
+
 
 event.listen(Entry.name, 'set', Entry.validate_name)
 event.listen(Entry.type, 'set', Entry.validate_type)
@@ -417,43 +476,51 @@ class Meta(Base):
 
     __tablename__ = 'meta'
 
+    __table_args__ = (
+        UniqueConstraint(entry_id, name, plugin, name='uix_meta_unique_name'),
+    )
 
     def _get_value(self):
-        if self.type == META_INTEGER:
+        if self.type == MetaType.integer:
             return int(self._value)
-        elif self.type == META_STRING:
-            return str(self._value)
-        elif self.type == META_JSON:
-            return json.loads(self._value)
-        elif self.type == META_BLOB:
+        elif self.type == MetaType.string:
+            return str(self._value, "utf-8")
+        elif self.type == MetaType.json:
+            return json.loads(str(self._value, "utf-8"))
+        elif self.type == MetaType.number:
+            return float(str(self._value, "utf-8"))
+        elif self.type == MetaType.blob:
             return self._value
-        elif self.type == META_NONE:
+        elif self.type in (MetaType.none, None):
             return None
         else:
             raise exc.DatabaseError("can't decode meta type: %s" %self.type)
 
     def _set_value(self, value):
         if isinstance(value, str):
-            self._value = value
-            self.type = META_STRING
+            self._value = bytes(value, "utf-8")
+            self.type = MetaType.string
         elif isinstance(value, int):
-            self._value = value
-            self.type = META_INTEGER
+            self._value = bytes(str(value), "utf-8")
+            self.type = MetaType.integer
+        elif isinstance(value, float):
+            self._value = bytes(str(value), "utf-8")
+            self.type = MetaType.number
         elif isinstance(value, dict):
-            self._value = json.dumps(value)
-            self.type = META_JSON
-        elif isinstance(value, None):
-            self._value = ""
-            self.type = META_NONE
+            self._value = bytes(json.dumps(value), "utf-8")
+            self.type = MetaType.json
+        elif value is None:
+            self._value = bytes()
+            self.type = MetaType.none
         else:
-            self._value = value
-            self.type = META_BLOB
+            self._value = bytes(value)
+            self.type = MetaType.blob
 
     def _del_value(self):
         self._value = ""
-        self.type = META_NONE
+        self.type = MetaType.none
 
     value = property(_get_value, _set_value, _del_value)
 
     def __repr__(self):
-        return "<Meta entry='%s' name='%s' plugin='%s'>" %(self.entry_id.full_path, self.name, self.plugin)
+        return "<Meta entry='%s' name='%s' type='%s' plugin='%s'>" %(self.entry_id, self.name, self.type, self.plugin)

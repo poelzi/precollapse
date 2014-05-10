@@ -39,6 +39,7 @@ class Daemon(object):
         self.loop = manager.loop
         self.manager.loop = self.loop
         self.blacklist = set()
+        self.first_run = True
 
     @asyncio.coroutine
     def do_job(self):
@@ -53,12 +54,13 @@ class Daemon(object):
                 if entry.plugin is None:
                     self.log.debug("detect plugin for entry: %s" %entry.id)
                     (plugin, prio) = self.manager.get_backend_for_entry(entry)
+                    if not plugin:
+                        self.log.info("can't find plugin to handle url %s" %(entry))
+                        entry.set_error("can't find plugin to handle url", unhandled=True)
+                        continue
                     entry.plugin = plugin.name
                     session.commit()
                     self.log.debug("use plugin for entry %s: %s (prio=%s)" %(entry.id, plugin.name, prio))
-                    if not plugin:
-                        self.log.error("can't find plugin to handle url %s" %(entry.id))
-                        entry.set_error("can't find plugin")
                 else:
                     plugin = self.manager.get_backend(entry.plugin)
                 if not plugin:
@@ -107,7 +109,6 @@ class Daemon(object):
                 #session.add(entry)
 
         except Exception as e:
-            print("#"*30)
             self.log.exception(e)
             #for i in session.query(model.Entry).filter(or_(model.Entry.next_check==None,
             #model.Entry.next_check<now)).\
@@ -128,9 +129,9 @@ class Daemon(object):
                 def get_entries():
                     try:
                         qsession = create_session()
-                        query = model.Entry.jobs_filter(qsession, now)
+                        query = model.Entry.jobs_filter(qsession, now, with_empty=self.first_run)
+                        self.first_run = False
                         for entry in query:
-                            print(entry)
                             qsession.expunge(entry)
                             yield entry
 

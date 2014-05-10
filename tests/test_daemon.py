@@ -82,14 +82,19 @@ class TestDaemon(unittest.TestCase):
         session.commit()
         root = col.get_root()
 
-        e1 = model.Entry(name="e1", parent=root, priority=10, collection=col)
-        e1e = model.Entry(name="child", parent=e1, priority=10, collection=col)
-        e2 = model.Entry(name="e2", parent=root, priority=-10, collection=col)
+        e1 = model.Entry(name="e1", parent_id=root.id, priority=10, collection=col)
+        e2 = model.Entry(name="e2", parent_id=root.id, priority=-10, collection=col)
+        session.add_all((e1,e2))
+        session.flush()
+        e1e = model.Entry(name="child", parent_id=e1.id, priority=10, collection=col)
+
         u1_name = "Übername for \\ | be"
 
         u1 = model.Entry(name=u1_name, collection=col)
-        u1c = model.Entry(name="Some Ünicode child", parent=u1, collection=col)
-        session.add(e1, e2, u1, u1c)
+        session.add(u1)
+        session.flush()
+        u1c = model.Entry(name="Some Ünicode child", parent_id=u1.id, collection=col)
+        session.add(u1c)
         session.commit()
 
         self.assertEqual(e1e.full_path, "/e1/child")
@@ -97,10 +102,31 @@ class TestDaemon(unittest.TestCase):
         self.assertEqual(e1.system_path, "e1")
         self.assertEqual(e1.full_path, "/e1")
         self.assertEqual(u1.full_path, u1_name)
-        self.assertEqual(e2.full_path, "/%s/%s" %(u1_name, "Some Ünicode child"))
+        self.assertEqual(u1c.full_path, "%s/%s" %(u1_name, "Some Ünicode child"))
 
-        with self.assertRaises(exc.InvalidNameError):
-            model.Entry(name="bla/blubb", collection=col)
+        u1.set_meta("bla", "blubb")
+        session.commit()
+        self.assertEqual(u1.get_meta("bla"), "blubb")
+        u1.set_meta("i1", 1)
+        self.assertEqual(u1.get_meta("i1"), 1)
+
+        u1.set_meta("d1", {"test":"blubb", "haha":"json", "in": 32})
+        self.assertEqual(u1.get_meta("d1"), {"test":"blubb", "haha":"json", "in": 32})
+
+        b1 = bytes([0, 1, 2, 3])
+        u1.set_meta("b1", b1)
+        self.assertEqual(u1.get_meta("b1"), b1)
+
+        u1.set_meta("b1", None)
+        self.assertEqual(u1.get_meta("b1"), None)
+
+        u1.set_meta("f1", 0.3)
+        self.assertAlmostEqual(u1.get_meta("f1"), 0.3)
+
+
+
+        #with self.assertRaises(exc.InvalidNameError):
+        #    model.Entry(name="bla/blubb", collection=col)
 
 
 
@@ -167,7 +193,7 @@ class TestDaemon(unittest.TestCase):
         yield from asyncio.sleep(3)
 
 
-    def test_entry(self):
+    def test_entry_errors(self):
         session = create_session()
         col = model.Collection.create(session, name="test")
         session.commit()
