@@ -49,7 +49,7 @@ class WgetBackend(CommandBackend):
         out_path = yield from dm.prepare_entry(entry, None)
         print("out_path", out_path)
         args = ["wget", "--progress=dot", "-P", out_path, "-N", entry.url]
-        return args
+        return [args]
 
 class WgetPlugin(base.Plugin):
 

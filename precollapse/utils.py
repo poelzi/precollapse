@@ -106,4 +106,11 @@ def fib(n):
     a, b = 0, 1
     for i in range(n):
         a, b = b, a + b
-        return a
+    return a
+
+def epsilon(value, length=250):
+    if not value:
+        return value
+    if isinstance(value, str) and len(value) > length:
+        return "%s…" %value[:length-1]
+    return value

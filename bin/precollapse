@@ -3,8 +3,11 @@
 import sys, os
 sys.path.insert(0,os.path.abspath(os.path.join(os.path.dirname(__file__),'..')))
 
-from IPython import embed
-__builtins__.embed = embed
+try:
+    from IPython import embed
+    __builtins__.embed = embed
+except ImportError:
+    pass
 
 from precollapse.manager import main
 

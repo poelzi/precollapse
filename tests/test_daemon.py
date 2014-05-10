@@ -185,11 +185,18 @@ class TestDaemon(unittest.TestCase):
         lc = e1.next_check
         self.assertLess(e1.next_check, in_5)
         e1.set_error("test failure2")
+        self.assertLess(e1.next_check, in_5)
+        e1.set_error("test failure2")
+        e1.set_error("test failure2")
+        self.assertLess(e1.next_check, in_5)
+        e1.set_error("test failure2")
+        self.assertGreater(e1.next_check, in_5)
         self.assertEqual(e1.error_msg, "test failure2")
         self.assertLess(lc, e1.next_check)
-        self.assertEqual(e1.failure_count, 2)
+        self.assertEqual(e1.failure_count, 5)
 
         e1.set_success()
+        self.assertEqual(e1.failure_count, 0)
         self.assertGreater(e1.next_check, in_1day)
         self.assertEqual(e1.state, model.EntryState.done)
 

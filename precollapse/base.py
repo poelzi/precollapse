@@ -8,7 +8,8 @@ import os
 import io
 import os.path
 import logging
-from IPython import embed
+import shutil
+from . import utils
 
 class UrlWeight(enum.Enum):
     prefect   = 80
@@ -73,10 +74,12 @@ class Backend(object):
     def start_backend(self, daemon):
         self.daemon = daemon
 
-    def success(self, entry, msg):
+    @asyncio.coroutine
+    def success(self, entry, msg, **kwargs):
         entry.set_success(msg)
 
-    def failure(self, entry, msg):
+    @asyncio.coroutine
+    def failure(self, entry, msg, **kwargs):
         entry.set_error(msg)
 
 class CommandBackend(Backend):
@@ -106,66 +109,109 @@ class CommandBackend(Backend):
     def process_update(self, entry, buffer_, strderr=False):
         pass
 
-    def task_done(self, entry, stderr=False, returncode=None, future=None):
+    def get_msg(self, entry, stderr=False, returncode=None):
+        i = stderr and 1 or 0
+        if entry in self.buffers and len(self.buffers[entry]) > i:
+            return self.buffers[entry][i].getvalue()
+
+    @asyncio.coroutine
+    def task_done(self, job, stderr=False, returncode=None, future=None):
         # update entry
+        i = stderr and 1 or 0
+        entry = job.entry
         if returncode is not None and not future.done():
             self.log.info("task done %s rc:%s", entry, returncode)
-            if returncode in self.valid_rc:
-                super(CommandBackend, self).success(entry, self.buffers[entry][1].getvalue())
-                if future:
-                    future.set_result((entry, True))
-            else:
-                super(CommandBackend, self).failure(entry, self.buffers[entry][1].getvalue())
+            if returncode not in self.valid_rc:
+                msg = self.get_msg(entry, stderr, returncode)
+                self.log.info("task failed: %s #",  utils.epsilon(msg))
+                yield from self.failure(entry, msg, returncode=returncode)
                 if future:
                     future.set_result((entry, False))
-        if stderr:
-            self.buffers[entry][1].truncate()
-            self.buffers[entry][1].close()
-        else:
-            self.buffers[entry][0].truncate()
-            self.buffers[entry][0].close()
-        if self.buffers[entry][0].closed and self.buffers[entry][1].closed:
-            del self.buffers[entry]
-            del self.jobs[entry]
+            elif job.last:
+                msg = self.get_msg(entry, stderr, returncode)
+                self.log.info("task success: %s",  utils.epsilon(msg))
+                yield from self.success(entry, msg, returncode=returncode)
+                if future:
+                    future.set_result((entry, True))
+        if entry in self.buffers and job.last:
+            if stderr:
+                self.buffers[entry][i].truncate()
+                self.buffers[entry][i].close()
+            else:
+                self.buffers[entry][i].truncate()
+                self.buffers[entry][i].close()
+            if self.buffers[entry][0].closed and self.buffers[entry][1].closed:
+                del self.buffers[entry]
+                del self.jobs[entry]
 
     def handle_entry(self, future, entry):
-        args = yield from self.get_command_args(entry)
+        opts = {
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+            "stdin": None
+        }
 
-        self.log.debug("run command: %s" %args)
-        job = yield from asyncio.create_subprocess_exec(*args, stdin=None,
-                                             stdout=asyncio.subprocess.PIPE,
-                                             stderr=asyncio.subprocess.PIPE)
-        #task = asyncio.Task(job)
-        @asyncio.coroutine
-        def read_stdout(job):
+        all_args = yield from self.get_command_args(entry)
+        all_args = list(all_args)
+
+        while True:
             try:
-                while True:
-                    data = yield from job.stdout.read()
-                    if not data:
-                        self.task_done(entry, returncode=job.returncode, future=future)
-                        return
-                    self.update_msg(entry, data)
-            except Exception as e:
-                self.log.exception(e)
-                self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
+                args = all_args.pop(0)
+            except IndexError:
+                break
 
-        @asyncio.coroutine
-        def read_stderr(job):
-            try:
-                while True:
-                    data = yield from job.stderr.read(10)
-                    if not data:
-                        self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
-                        return
-                    self.update_msg(entry, data, stderr=True)
-            except Exception as e:
-                self.log.exception(e)
-                self.task_done(entry, stderr=True, returncode=job.returncode, future=future)
+            if isinstance(args, tuple):
+                opts.update(args[1])
+                args = args[0]
+            self.log.debug("run command: %s" %args)
 
-        asyncio.Task(read_stdout(job))
-        asyncio.Task(read_stderr(job))
-        self.jobs[entry] = job
+            job = yield from asyncio.create_subprocess_exec(*args, **opts)
+            #task = asyncio.Task(job)
+
+            job.last = not len(all_args)
+            job.entry = entry
+            job.future = future
+
+            if job.stdout:
+                asyncio.Task(self.read_stdout(job))
+            if job.stderr:
+                asyncio.Task(self.read_stderr(job))
+            if job.stdin:
+                asyncio.Task(self.get_stdin(job))
+
+            self.jobs[entry] = job
+            yield from job.wait()
         #tsk = asyncio.Task(job.wait())
+
+    @asyncio.coroutine
+    def get_stdin(self, job):
+        pass
+
+    @asyncio.coroutine
+    def read_stdout(self, job):
+        try:
+            while True:
+                data = yield from job.stdout.read()
+                if not data:
+                    yield from self.task_done(job, returncode=job.returncode, future=job.future)
+                    return
+                self.update_msg(job.entry, data)
+        except Exception as e:
+            self.log.exception(e)
+            self.task_done(job, stderr=True, returncode=job.returncode, future=job.future)
+
+    @asyncio.coroutine
+    def read_stderr(self, job):
+        try:
+            while True:
+                data = yield from job.stderr.read(10)
+                if not data:
+                    yield from self.task_done(job, stderr=True, returncode=job.returncode, future=job.future)
+                    return
+                self.update_msg(job.entry, data, stderr=True)
+        except Exception as e:
+            self.log.exception(e)
+            self.task_done(job, stderr=True, returncode=job.returncode, future=job.future)
 
     def get_command_args(self, entry):
         raise NotImplemented
@@ -202,7 +248,6 @@ class DownloadManager(object):
 
         returns absolute path
         """
-        print(entry.system_path)
         rv = os.path.join(self.download_path, entry.system_path)
         os.makedirs(rv,
                     exist_ok=True)
@@ -216,15 +261,39 @@ class DownloadManager(object):
                 os.rmdir(os.path.join(dirpath, dn))
             #print(dirpath, dirnames, filenames)
 
+    @asyncio.coroutine
     def clear_entry(self, entry):
         """
         Removes all files downloaded into the entry
         """
-        path = os.path.join(self.download_path, entry.full_path[1:])
+        path = os.path.join(self.download_path, entry.system_path)
         if self.manager.loop:
             yield from asyncio.wait_for(self._rm_recrusive(path), None)
         else:
             self._rm_recrusive(path)
+
+    def _mv_cruft(self, path, cruft_path):
+        os.makedirs(cruft_path, mode=0o755, exist_ok=True)
+        i = 2
+        while i:
+            try:
+                shutil.move(path, cruft_path)
+                return
+            except FileNotFoundError:
+                return
+            except shutil.Error:
+                tpath = os.path.join(cruft_path, os.path.basename(path))
+                shutil.rmtree(tpath, ignore_errors=True)
+                i -= 1
+
+    @asyncio.coroutine
+    def move_to_craft(self, entry):
+        path = os.path.join(self.download_path, entry.system_path)
+        cruft_path = os.path.join(self.download_path, "_cruft")
+        if self.manager.loop:
+            yield from asyncio.wait_for(self._mv_cruft(path, cruft_path), None)
+        else:
+            self._mv_cruft(path, cruft_path)
 
     @asyncio.coroutine
     def entry_done(self, entry, ):

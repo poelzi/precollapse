@@ -7,3 +7,5 @@ info /test1
 entry-add /test1/python-enum https://docs.python.org/3/library/enum.html
 cd test1
 entry-add /test1/python-content https://docs.python.org/3/contents.html
+entry-add git-test https://github.com/poelzi/git-clone-test.git
+
