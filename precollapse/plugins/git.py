@@ -1,7 +1,7 @@
 from precollapse import base, exceptions as exc
 from precollapse.exceptions import CommandMissing
 from precollapse.utils import which
-from precollapse.base import CommandBackend, UrlWeight
+from precollapse.base import CommandBackend, UrlWeight, Arguments
 import subprocess
 import asyncio
 import os
@@ -48,17 +48,32 @@ class GitBackend(CommandBackend):
         #embed()
         dm = yield from self.manager.get_download_manager(entry.collection)
         out_path = yield from dm.prepare_entry(entry, None)
+
         def check_exists(out_path):
             if os.path.exists(os.path.join(out_path, ".git")):
                 return True
             return False
         exists = yield from self.daemon.loop.run_in_executor(None, check_exists, out_path)
+
+        def check_submodule(out_path):
+            if os.path.exists(os.path.join(out_path, ".gitmodules")):
+                return [Arguments("git", "submodule", "init", cwd=out_path),
+                        Arguments("git", "submodule", "update", cwd=out_path)]
+            return False
+
+        @asyncio.coroutine
+        def submodules(**kwargs):
+            rv = yield from self.daemon.loop.run_in_executor(None, check_submodule, out_path)
+            return rv
+
         print("out_path", out_path, exists)
         if exists:
-            args = [["git", "--git-dir=%s" %os.path.join(out_path, '.git'), "fetch", "--all"],
-                    ["git", "--git-dir=%s" %os.path.join(out_path, '.git'), "merge", "FETCH_HEAD"]]
+            args = [Arguments("git", "--git-dir=%s" %os.path.join(out_path, '.git'), "fetch", "--all"),
+                    Arguments("git", "--git-dir=%s" %os.path.join(out_path, '.git'), "merge", "FETCH_HEAD"),
+                    submodules]
         else:
-            args = [["git", "clone", entry.url, out_path]]
+            args = [Arguments("git", "clone", entry.url, out_path),
+                    submodules]
         return args
 
     @asyncio.coroutine

@@ -82,6 +82,15 @@ class Backend(object):
     def failure(self, entry, msg, **kwargs):
         entry.set_error(msg)
 
+class Arguments(list):
+    def __init__(self, *args, **options):
+        super(Arguments, self).__init__(args)
+        self.options = options
+
+    #def __repr__(self):
+        #x = list.__str__(self)
+        #return "<Arguments %s options=%s>" %(x, self.options)
+
 class CommandBackend(Backend):
     """
     Backend that implements usage command arguments to spawn
@@ -127,12 +136,6 @@ class CommandBackend(Backend):
                 yield from self.failure(entry, msg, returncode=returncode)
                 if future:
                     future.set_result((entry, False))
-            elif job.last:
-                msg = self.get_msg(entry, stderr, returncode)
-                self.log.info("task success: %s",  utils.epsilon(msg))
-                yield from self.success(entry, msg, returncode=returncode)
-                if future:
-                    future.set_result((entry, True))
         if entry in self.buffers and job.last:
             if stderr:
                 self.buffers[entry][i].truncate()
@@ -145,24 +148,44 @@ class CommandBackend(Backend):
                 del self.jobs[entry]
 
     def handle_entry(self, future, entry):
-        opts = {
-            "stdout": asyncio.subprocess.PIPE,
-            "stderr": asyncio.subprocess.PIPE,
-            "stdin": None
-        }
-
         all_args = yield from self.get_command_args(entry)
         all_args = list(all_args)
 
+        job = None
         while True:
             try:
                 args = all_args.pop(0)
             except IndexError:
-                break
+                # all jobs done successfull
+                msg = self.get_msg(entry, True, None)
+                self.log.info("task success: %s",  utils.epsilon(msg))
+                yield from self.success(entry, msg, returncode=job.returncode)
+                if future:
+                    future.set_result((entry, True))
+                return
 
-            if isinstance(args, tuple):
-                opts.update(args[1])
-                args = args[0]
+            print("-"*30)
+            print(args, asyncio.iscoroutinefunction(args))
+            if asyncio.iscoroutinefunction(args):
+                print("jojo")
+                xargs = yield from args()
+                args = list(xargs)
+                if isinstance(args, list) and not isinstance(args, Arguments):
+                    all_args = args[1:] + all_args
+                    args = args[0]
+
+            if not len(args):
+                continue
+
+            opts = {
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "stdin": None
+            }
+
+            if hasattr(args, "options"):
+                opts.update(args.options)
+
             self.log.debug("run command: %s" %args)
 
             job = yield from asyncio.create_subprocess_exec(*args, **opts)
@@ -181,7 +204,6 @@ class CommandBackend(Backend):
 
             self.jobs[entry] = job
             yield from job.wait()
-        #tsk = asyncio.Task(job.wait())
 
     @asyncio.coroutine
     def get_stdin(self, job):
