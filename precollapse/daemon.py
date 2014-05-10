@@ -128,12 +128,7 @@ class Daemon(object):
                 def get_entries():
                     try:
                         qsession = create_session()
-                        query = qsession.query(model.Entry).\
-                            filter(or_(model.Entry.next_check==None,
-                                       model.Entry.next_check<now)) \
-                            .filter(and_(model.Entry.type.isnot(model.EntryType.directory),
-                                         model.Entry.type.isnot(model.EntryType.root))) \
-                            .order_by(desc(model.Entry.priority))
+                        query = model.Entry.jobs_filter(qsession, now)
                         for entry in query:
                             print(entry)
                             qsession.expunge(entry)

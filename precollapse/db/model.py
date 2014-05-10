@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, BLOB, Enum, ForeignKey,\
-                       DateTime, Interval, Boolean, asc, desc, UniqueConstraint, event
+                       DateTime, Interval, Boolean, asc, desc, UniqueConstraint, event, and_
 from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, backref, object_session
@@ -25,6 +25,7 @@ class EntryType(SEnum):
     directory = 'DIRECTORY'
     collection = 'COLLECTION'
     collection_member = 'COLLECTION_MEMBER'
+    collection_single = 'COLLECTION_SINGLE'
     single = 'SINGLE'
 
 class MetaType(SEnum):
@@ -247,6 +248,16 @@ class Entry(Base, ModelMixin):
         ("updated", "last_success", "last_failure",
          "next_check", "error_msg", "success_msg")
         )
+
+    @classmethod
+    def jobs_filter(cls, session, now):
+        return session.query(cls)\
+                    .filter(or_(cls.next_check==None,
+                                cls.next_check<now)) \
+                    .filter(and_(cls.type.isnot(EntryType.directory),
+                                    cls.type.isnot(EntryType.root),
+                                    cls.type.isnot(EntryType.collection_member))) \
+                    .order_by(desc(cls.priority))
 
     @property
     def size(self):
