@@ -110,7 +110,7 @@ class PrecollapseApp(App):
 
         read = config.read([default, path])
         self.log.debug("read config files: %s" %read)
-        logging.config.fileConfig(config, disable_existing_loggers=True)
+        #logging.config.fileConfig(config, disable_existing_loggers=True)
         #if path:
         #    logging.config.fileConfig(path, disable_existing_loggers=False)
 

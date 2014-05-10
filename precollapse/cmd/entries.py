@@ -87,9 +87,9 @@ class Mkdir(Command, EntryMod):
         ]
 
     def take_action(self, parsed_args):
-        from ..db.model import ModelType
+        from ..db.model import EntryType
         entry = self.add_entry(parsed_args.path,
-                               type=ModelType.directory)
+                               type=EntryType.directory)
         return entry.dump(details=True)
 
 class Clear(Command):
