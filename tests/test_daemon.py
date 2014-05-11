@@ -224,6 +224,6 @@ class TestDaemon(unittest.TestCase):
         e1.set_success()
         self.assertEqual(e1.failure_count, 0)
         self.assertGreater(e1.next_check, in_1day)
-        self.assertEqual(e1.state, model.EntryState.done)
+        self.assertEqual(e1.state, model.EntryState.success)
 
 

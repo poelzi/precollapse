@@ -39,9 +39,11 @@ class MetaType(SEnum):
     none = 'NONE'
 
 class EntryState(SEnum):
+    started = "STARTED"
     download = "DOWNLOAD"
     empty = 'EMPTY'
-    done = "DONE"
+    failure = "FAILED"
+    success = "SUCCESS"
 
 
 def suuid():
@@ -293,6 +295,7 @@ class Entry(Base, ModelMixin):
             self.failure_count = 0
         else:
             now = datetime.datetime.now()
+            self.state = EntryState.failure
             self.last_failure = now
             self.failure_count += 1
             self.next_check = (now +
@@ -310,7 +313,7 @@ class Entry(Base, ModelMixin):
         self.failure_count = 0
         self.next_check = (now +
                            self.get_first_set("check_interval"))
-        self.state = EntryState.done.value
+        self.state = EntryState.success
         session.add(self)
         session.commit()
 

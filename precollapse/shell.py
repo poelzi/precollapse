@@ -6,7 +6,7 @@ from cliff.app import App
 from cliff.commandmanager import CommandManager
 from .__init__ import VERSION
 from . import utils
-import os
+import os, sys
 import readline
 import configparser
 from . import db
@@ -21,7 +21,6 @@ class PrecollapseApp(App):
 
     def __init__(self, manager):
         #self.get_plugins()
-        print("-----")
         self.pwd = "/"
         self.manager = manager
         self.config = None

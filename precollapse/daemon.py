@@ -34,7 +34,7 @@ class Daemon(object):
         self.manager = manager
         self.jobs = asyncio.PriorityQueue(queue_size)
         self.check_interval = check_interval
-        self.in_check = weakref.WeakSet()
+        self.in_check = set()
         self.workpool = ThreadPoolExecutor(5)
         self.loop = manager.loop
         self.manager.loop = self.loop
@@ -48,6 +48,7 @@ class Daemon(object):
                 job = yield from self.jobs.get()
                 #yield from asyncio.sleep(1000)
                 entry = job.entry
+                entry.state = model.EntryState.started
                 session = create_session()
                 session.add(entry)
                 self.log.info("check entry: %s" %entry.full_path)
@@ -74,7 +75,7 @@ class Daemon(object):
                     asyncio.Task(self.job_done(future))
                 #rv.add_done_callback(self.job_done)
                 rv.add_done_callback(call_done)
-
+                yield from rv
             except Exception as e:
                 self.log.exception(e)
         #raise asyncio.tasks.Return(job)
@@ -83,9 +84,12 @@ class Daemon(object):
         entry, rv = future.result()
         if not rv:
             self.log.error("job failed: %s", str(entry))
+            self.set.remove(entry.id)
         else:
             dm = yield from self.manager.get_download_manager(entry.collection)
             yield from dm.entry_done(entry)
+            self.set.remove(entry.id)
+
 
     @asyncio.coroutine
     def got_entries(self, entries):
@@ -93,7 +97,7 @@ class Daemon(object):
             return
         try:
             for entry in entries:
-                if entry in self.in_check:
+                if entry.id in self.in_check:
                     self.log.debug("entry still processed: %s" %entry.full_path)
                     continue
 
