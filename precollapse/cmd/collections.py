@@ -17,8 +17,8 @@ class Collection_List(Lister):
 
     def take_action(self, parsed_args):
         from ..db.model import Collection
-        from ..db import Session
-        session = Session()
+        from ..db import create_session
+        session = create_session()
         keys = ['id', 'name', 'uuid', 'owner', 'upstream_url']
         q = session.query(Collection).all()
         if not len(q):
@@ -45,16 +45,16 @@ class Collection_Add(ShowOne):
 
     def take_action(self, parsed_args):
         from ..db.model import Collection
-        from ..db import Session
+        from ..db import create_session
         print(parsed_args)
         #Collection.create(
-        session = Session()
+        session = create_session()
         rv = Collection.create(session,
                                name=parsed_args.name[0], owner=parsed_args.owner,
                                owner_gpgid=parsed_args.gpgid)
         session.commit()
         x = rv.dump()
-        return x.keys(), x.values()
+        return x
 
 
 class Collection_Export(Command):

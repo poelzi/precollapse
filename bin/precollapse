@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 
 import sys, os
+
+
+if sys.argv[0].endswith("-local"):
+    af = "env/bin/activate_this.py"
+    loc = dict(__file__=os.path.join(os.getcwd(),os.path.dirname(__file__),"..", af))
+    with open(af) as f:
+        code = compile(f.read(), af, 'exec')
+        exec(code, globals(), loc)
+
 sys.path.insert(0,os.path.abspath(os.path.join(os.path.dirname(__file__),'..')))
-
-
 
 try:
     from IPython import embed
