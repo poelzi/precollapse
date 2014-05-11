@@ -270,13 +270,15 @@ class Entry(Base, ModelMixin):
         return super(Entry, self).__init__(*args, **kwargs)
 
     @classmethod
-    def jobs_filter(cls, session, now, with_empty=False):
+    def jobs_filter(cls, session, now, with_empty=False, exclude=()):
         q = session.query(cls)\
                     .filter(or_(cls.next_check==None,
                                 cls.next_check<now)) \
                     .filter(or_(cls.type.is_(EntryType.single),
                                 cls.type.is_(EntryType.collection_single),
                                 cls.type.is_(EntryType.collection)))
+        if exclude:
+            q = q.filter(cls.id.notin_(exclude))
         if not with_empty:
             q = q.filter(cls.state!=EntryState.empty)
         return q.order_by(desc(cls.priority))

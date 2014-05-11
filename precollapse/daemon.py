@@ -84,11 +84,17 @@ class Daemon(object):
         entry, rv = future.result()
         if not rv:
             self.log.error("job failed: %s", str(entry))
-            self.set.remove(entry.id)
+            try:
+                self.in_check.remove(entry.id)
+            except KeyError:
+                self.log.debug("entry should have been in in_check")
         else:
             dm = yield from self.manager.get_download_manager(entry.collection)
             yield from dm.entry_done(entry)
-            self.set.remove(entry.id)
+            try:
+                self.in_check.remove(entry.id)
+            except KeyError:
+                self.log.debug("entry should have been in in_check")
 
 
     @asyncio.coroutine
@@ -101,6 +107,7 @@ class Daemon(object):
                     self.log.debug("entry still processed: %s" %entry.full_path)
                     continue
 
+                self.in_check.add(entry.id)
                 #self.in_check.add(entry)
                 #embed()
                 #print("qlen", self.jobs.qsize())
@@ -125,6 +132,10 @@ class Daemon(object):
     def check_jobs(self):
         while True:
             try:
+                if self.jobs.full():
+                    self.log.debug("check jobs skipped. jobs full.")
+                    yield from asyncio.sleep(self.check_interval)
+                    continue
                 self.log.debug("check jobs")
                 now = datetime.datetime.now()
                 next_check = now + datetime.timedelta(seconds=60)
@@ -133,7 +144,8 @@ class Daemon(object):
                 def get_entries():
                     try:
                         qsession = create_session()
-                        query = model.Entry.jobs_filter(qsession, now, with_empty=self.first_run)
+                        query = model.Entry.jobs_filter(qsession, now, with_empty=self.first_run,
+                                                        exclude=self.blacklist.union(self.in_check))
                         self.first_run = False
                         for entry in query:
                             qsession.expunge(entry)
@@ -160,7 +172,9 @@ class Daemon(object):
             backend.start_backend(self)
 
         asyncio.Task(self.check_jobs())
-        for i in range(self.manager.app.config.getint("daemon", "worker", fallback=1)):
+        num_workers = self.manager.app.config.getint("daemon", "worker", fallback=1)
+        self.log.debug("start %s worker tasks", num_workers)
+        for i in range(num_workers):
             asyncio.Task(self.do_job())
 
         try:
