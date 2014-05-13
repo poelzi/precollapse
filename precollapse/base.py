@@ -10,6 +10,7 @@ import os.path
 import logging
 import shutil
 from . import utils
+from sqlalchemy.orm import object_session
 
 class UrlWeight(enum.Enum):
     prefect   = 80
@@ -164,10 +165,7 @@ class CommandBackend(Backend):
                     future.set_result((entry, True))
                 return
 
-            print("-"*30)
-            print(args, asyncio.iscoroutinefunction(args))
             if asyncio.iscoroutinefunction(args):
-                print("jojo")
                 xargs = yield from args()
                 args = list(xargs)
                 if isinstance(args, list) and not isinstance(args, Arguments):
@@ -242,6 +240,20 @@ class CommandBackend(Backend):
         self.daemon = daemon
         self.jobs = {}
         self.buffers = {}
+
+class ExecutorBackend(Backend):
+    def handle_entry(self, future, entry):
+        object_session(entry).commit()
+        process = self.manager.loop.run_in_executor(None, self.exec_entry, entry)
+        try:
+            rv = yield from asyncio.wait_for(process, 500)
+            future.set_result((entry, rv))
+        except asyncio.TimeoutError as e:
+            process.shutdown(wait=True)
+            future.set_exception(e)
+
+
+
 
 class DownloadManager(object):
     """
@@ -323,6 +335,14 @@ class DownloadManager(object):
         Mark file to be successfull downloaded
         """
         pass
+
+    def get_temp_path(self, backend, entry=None):
+        if entry:
+            rv = os.path.join(self.download_path, "_temp", entry.system_path, backend.name)
+        else:
+            rv = os.path.join(self.download_path, "_temp", "_%s" %backend.name)
+        return rv
+
 
 class Plugin(IPlugin):
     commands = []

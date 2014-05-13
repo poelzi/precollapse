@@ -1,4 +1,4 @@
-from precollapse.base import Backend, UrlWeight
+from precollapse.base import Backend, UrlWeight, ExecutorBackend
 from precollapse import base, utils
 from precollapse.exceptions import CommandMissing
 from precollapse.db import create_session, model
@@ -13,7 +13,7 @@ try:
 except ImportError:
     feedparser = None
 
-class FeedreaderBackend(Backend):
+class FeedreaderBackend(ExecutorBackend):
 
     name = "feedreader"
     arguments = (
@@ -35,7 +35,7 @@ class FeedreaderBackend(Backend):
             self.log.debug("can't handle url: %s" %e)
             return UrlWeight.unable
 
-    def parse_feed(self, entry):
+    def exec_entry(self, entry):
         os = object_session(entry)
         os.expunge(entry)
 
@@ -84,18 +84,6 @@ class FeedreaderBackend(Backend):
         self.log.info("successfully checked feed: %s", entry)
         entry.set_success("\n".join(msg))
         return True
-
-
-    def handle_entry(self, future, entry):
-        object_session(entry).commit()
-        process = self.manager.loop.run_in_executor(None, self.parse_feed, entry)
-        try:
-            rv = yield from asyncio.wait_for(process, 500)
-            future.set_result((entry, rv))
-        except asyncio.TimeoutError as e:
-            process.shutdown(wait=True)
-            future.set_exception(e)
-
 
         #result = yield from process.result()
         #print(result)

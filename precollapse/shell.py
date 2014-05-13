@@ -13,6 +13,7 @@ from . import db
 
 CONFIG_FILE = "~/.config/precollapse/precollapse.conf"
 CONFIG_PATH = "~/.config/precollapse"
+CACHE_PATH = "~/.cache/precollapse"
 
 
 class PrecollapseApp(App):
@@ -64,6 +65,13 @@ class PrecollapseApp(App):
             help='use state directory',
             )
         parser.add_argument(
+            '--cache',
+            default=CACHE_PATH,
+            action='store',
+            metavar='cache',
+            help='use cache directory',
+            )
+        parser.add_argument(
             '--full-debug',
             default=False,
             action='store_true',
@@ -72,8 +80,17 @@ class PrecollapseApp(App):
 
 
     def create_config_dir(self):
-        rpath = os.path.expanduser(self.options.state)
-        os.makedirs(rpath, exist_ok=True)
+        self.state_path = os.path.expanduser(self.options.state)
+        os.makedirs(self.state_path, exist_ok=True)
+        self.cache_path = os.path.expanduser(self.options.cache)
+        os.makedirs(self.cache_path, exist_ok=True)
+
+    def get_cache_dir(self, backend):
+        return os.path.join(self.cache_path, backend.name)
+
+    def get_state_dir(self, backend):
+        return os.path.join(self.cache_path, backend.name)
+
 
     #def get_plugins(self):
         #print("-"*20)

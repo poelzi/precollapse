@@ -169,7 +169,10 @@ class Daemon(object):
 
         # start all backends
         for backend in self.manager.get_all_backends():
-            backend.start_backend(self)
+            if asyncio.iscoroutinefunction(backend.start_backend):
+                self.loop.run_until_complete(backend.start_backend(self))
+            else:
+                backend.start_backend(self)
 
         asyncio.Task(self.check_jobs())
         num_workers = self.manager.app.config.getint("daemon", "worker", fallback=1)
