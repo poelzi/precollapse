@@ -40,11 +40,12 @@ class Backend(object):
     def weight_entry(self, entry):
         return UrlWeight.unable
 
+    def prepare_session(self, entry):
+        pass
+
     def do_entry(self, entry):
-        from .db import create_session
-        session = create_session()
-        session.add(entry)
         rv = asyncio.Future()
+        self.prepare_session(entry)
         try:
             asyncio.Task(self.handle_entry(rv, entry))
         except Exception as e:
@@ -52,7 +53,9 @@ class Backend(object):
             session.rollback()
         # autocommit when entry was successfull
         def commit(ftr):
-            session.commit()
+            #session = object_session(entry)
+            #session.commit()
+            pass
         rv.add_done_callback(commit)
         return rv
 
@@ -242,9 +245,21 @@ class CommandBackend(Backend):
         self.buffers = {}
 
 class ExecutorBackend(Backend):
+    def do_exec(self, entry):
+        from .db import create_session
+        session = create_session()
+        session.add(entry)
+        print("do_exec", object_session(entry))
+        return self.exec_entry(entry)
+
+    def prepare_session(self, entry):
+        # we need to create the session inside the executor thread, so clean it
+        session = object_session(entry)
+        session.commit()
+        session.expunge(entry)
+
     def handle_entry(self, future, entry):
-        object_session(entry).commit()
-        process = self.manager.loop.run_in_executor(None, self.exec_entry, entry)
+        process = self.manager.loop.run_in_executor(None, self.do_exec, entry)
         try:
             rv = yield from asyncio.wait_for(process, 500)
             future.set_result((entry, rv))

@@ -143,7 +143,7 @@ class Daemon(object):
 
                 def get_entries():
                     try:
-                        qsession = create_session()
+                        qsession = create_session(expire_on_commit=False)
                         query = model.Entry.jobs_filter(qsession, now, with_empty=self.first_run,
                                                         exclude=self.blacklist.union(self.in_check))
                         self.first_run = False

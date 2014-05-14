@@ -15,12 +15,12 @@ def configure_engine(url='sqlite:///precollapse.db'):
 
 Base = declarative_base()
 
-def create_session():
+def create_session(expire_on_commit=True):
     global ScopeSession, Session, Engine
     if ScopeSession:
         return ScopeSession()
     ScopeSession = Session = scoped_session(sessionmaker(bind=Engine))
-    return ScopeSession()
+    return ScopeSession(expire_on_commit=expire_on_commit)
 
 
 
